@@ -13,7 +13,8 @@
     "export:apples": "node packages/core/scripts/export-apples.ts",
     "dev": "npm run dev -w @slice-even/web",
     "functions:sync": "node scripts/sync-core.mjs",
-    "functions:deploy": "npm run functions:sync && npx supabase functions deploy submit-cut --project-ref ohhwwzyzyzqgstothllx --use-api"
+    "functions:deploy": "npm run functions:sync && npx supabase functions deploy submit-cut --project-ref ohhwwzyzyzqgstothllx --use-api",
+    "deploy:pages": "node scripts/deploy-pages.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

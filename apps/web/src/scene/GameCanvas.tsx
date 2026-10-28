@@ -44,7 +44,8 @@ function Board() {
 }
 
 const TARGET = new THREE.Vector3(0, 1, 1.5);
-const BASE_DISTANCE = new THREE.Vector3(0, 17, 24).sub(TARGET).length();
+// The initial camera position sets the angle; this sets how far back it sits.
+const BASE_DISTANCE = new THREE.Vector3(0, 17, 24).sub(TARGET).length() * 1.35;
 
 /**
  * Pulls the camera back for long objects (a banana spans 20+ cm) and narrow

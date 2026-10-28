@@ -4,6 +4,14 @@ import { PracticeGame } from "./PracticeGame.tsx";
 import { RoomGame } from "./room/RoomGame.tsx";
 import { createRoom, joinRoom } from "./net/rooms.ts";
 import { ensureSignedIn, supabaseConfigured } from "./net/supabase.ts";
+import { sfx, unlockOnGesture } from "./audio/sfx.ts";
+import { SoundToggle } from "./ui/SoundToggle.tsx";
+
+unlockOnGesture();
+// Every chunky button and chip clicks.
+document.addEventListener("click", (e) => {
+  if ((e.target as Element | null)?.closest?.(".btn:not(.sound-toggle), .chip")) sfx.click();
+});
 
 type Screen =
   | { type: "home" }
@@ -54,13 +62,18 @@ export function App() {
     setScreen({ type: "home" });
   };
 
+  // A plain element, not a nested component: a component declared here would
+  // be a new type on every render and remount the whole game.
+  let content;
   switch (screen.type) {
     case "practice":
-      return <PracticeGame onExit={goHome} />;
+      content = <PracticeGame onExit={goHome} />;
+      break;
     case "room":
-      return <RoomGame roomId={screen.roomId} userId={screen.userId} onExit={goHome} />;
+      content = <RoomGame roomId={screen.roomId} userId={screen.userId} onExit={goHome} />;
+      break;
     case "home":
-      return (
+      content = (
         <Home
           initialCode={codeFromUrl}
           busy={busy}
@@ -70,5 +83,13 @@ export function App() {
           onPractice={() => setScreen({ type: "practice" })}
         />
       );
+      break;
   }
+
+  return (
+    <>
+      {content}
+      <SoundToggle />
+    </>
+  );
 }

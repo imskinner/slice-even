@@ -4,6 +4,7 @@ import { GameCanvas } from "../scene/GameCanvas.tsx";
 import { SliceStage } from "../scene/SliceStage.tsx";
 import { appearanceFor, evaluateCut, objectSpan, type CutOutcome } from "../game.ts";
 import { ItemBadge } from "../ui/Hud.tsx";
+import { sfx } from "../audio/sfx.ts";
 import { finalizeRound, startRound, submitCut, useRoom, type Round } from "../net/rooms.ts";
 import { Lobby, RoundResults, FinalScoreboard, RoundStatus } from "./RoomPanels.tsx";
 
@@ -105,6 +106,11 @@ function RoundStage({
   onError(message: string | null): void;
 }) {
   const seed = playerSeed(round.seed, userId);
+  // Ding when a fresh round opens (not when reloading into a finished one).
+  useEffect(() => {
+    if (round.status === "cutting") sfx.ding();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const object = useMemo(() => generateObject(round.kind, seed), [round.kind, seed]);
   const look = useMemo(() => appearanceFor(seed), [seed]);
   const span = useMemo(() => objectSpan(object), [object]);

@@ -15,13 +15,19 @@ interface SplashProps {
   floor: number;
   color: string;
   count?: number;
+  /** Called for a few of the droplets as they hit the board (for sound). */
+  onLand?(): void;
 }
 
 const GRAVITY = 140; // cm/s², toned down so the burst reads at game speed
 const LIFE = 1.6;
 
+/** Only some landings make a sound; dozens at once would be a hiss. */
+const SOUNDED_LANDINGS = 7;
+
 /** A burst of juice droplets (or crumbs) that fly off the cut and splat on the board. */
-export function Splash({ origin, normal, width, bottom, top, floor, color, count = 90 }: SplashProps) {
+export function Splash({ origin, normal, width, bottom, top, floor, color, count = 90, onLand }: SplashProps) {
+  const landings = useRef(0);
   const mesh = useRef<THREE.InstancedMesh>(null!);
   const particles = useMemo(() => {
     const n = normal.clone().setY(0).normalize();
@@ -61,6 +67,7 @@ export function Splash({ origin, normal, width, bottom, top, floor, color, count
         if (p.pos.y <= floor + 0.02) {
           p.pos.y = floor + 0.02;
           p.landed = true;
+          if (landings.current++ % 9 === 0 && landings.current / 9 < SOUNDED_LANDINGS) onLand?.();
         }
       }
       dummy.position.copy(p.pos);

@@ -7,6 +7,7 @@ import { Knife } from "./Knife.tsx";
 import { createMaterials } from "./materials.ts";
 import { Decoration } from "./Decoration.tsx";
 import { Splash } from "./Splash.tsx";
+import { sfx } from "../audio/sfx.ts";
 import type { CutOutcome } from "../game.ts";
 
 interface SliceStageProps {
@@ -35,6 +36,10 @@ export function SliceStage({
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   const { skin, flesh, splash } = useMemo(() => createMaterials(object, skinColor), [object, skinColor]);
+  const handleCut = (plane: Plane) => {
+    sfx.cut(object.kind);
+    onCut(plane);
+  };
   useEffect(
     () => () => {
       skin.dispose();
@@ -88,11 +93,12 @@ export function SliceStage({
           top={box.max.y}
           floor={box.min.y}
           color={splash}
+          onLand={() => sfx.splat(object.kind)}
         />
       )}
       {outcome && revealIdeal && <IdealPlane plane={outcome.ideal} height={box.max.y - box.min.y + 2} center={center} />}
       {!(locked && !outcome) && (
-        <Knife top={box.max.y} bottom={box.min.y} center={center} lift={lift} active={!outcome} onCut={onCut} />
+        <Knife top={box.max.y} bottom={box.min.y} center={center} lift={lift} active={!outcome} onCut={handleCut} />
       )}
     </group>
   );

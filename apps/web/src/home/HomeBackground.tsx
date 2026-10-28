@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { generateObject, OBJECT_KINDS, type Plane } from "@slice-even/core";
+import { generateObject, OBJECT_KINDS, type ObjectKind, type Plane } from "@slice-even/core";
 import { StudioEnvironment } from "../scene/GameCanvas.tsx";
 import { createMaterials, type ObjectMaterials } from "../scene/materials.ts";
 import { splitGeometry, toBufferGeometry } from "../scene/geometry.ts";
 import { appearanceFor, randomSeed } from "../game.ts";
+import { sfx } from "../audio/sfx.ts";
 
 /**
  * Home screen backdrop: the same procedural produce as the game floats up
@@ -43,9 +44,9 @@ export function HomeBackground({ onSlice }: { onSlice(): void }) {
       <div className="home-bg">
         <Canvas camera={{ position: [0, 0, 60], fov: 40 }} gl={{ alpha: true }} dpr={[1, 1.75]}>
           <StudioEnvironment intensity={0.5} />
-          <hemisphereLight args={["#fff4e6", "#7b2ff7", 0.35]} />
+          <hemisphereLight args={["#fff4e6", "#13808a", 0.35]} />
           <directionalLight position={[10, 20, 25]} intensity={1.5} />
-          <directionalLight position={[-20, -5, 10]} intensity={0.7} color="#ff9ad5" />
+          <directionalLight position={[-20, -5, 10]} intensity={0.7} color="#ffb199" />
           <FloatingProduce trail={trail} onSlice={onSlice} />
         </Canvas>
       </div>
@@ -57,6 +58,7 @@ export function HomeBackground({ onSlice }: { onSlice(): void }) {
 /* ------------------------------------------------------------------ 3D */
 
 interface Item {
+  kind: ObjectKind;
   group: THREE.Group;
   geometry: THREE.BufferGeometry;
   materials: ObjectMaterials;
@@ -120,6 +122,7 @@ function FloatingProduce({ trail, onSlice }: { trail: React.RefObject<Trail>; on
     group.quaternion.random();
     root.current.add(group);
     world.items.push({
+      kind,
       group,
       geometry,
       materials,
@@ -200,6 +203,7 @@ function FloatingProduce({ trail, onSlice }: { trail: React.RefObject<Trail>; on
     item.geometry.dispose();
     world.items.splice(world.items.indexOf(item), 1);
     addBurst(item.group.position, normalWorld, swipeWorld, item.materials.splash);
+    sfx.cut(item.kind);
     setTimeout(() => {
       if (root.current) spawn(false);
     }, 700);
@@ -228,6 +232,7 @@ function FloatingProduce({ trail, onSlice }: { trail: React.RefObject<Trail>; on
   };
 
   const lastPointer = useRef<TrailPoint | null>(null);
+  const lastWhoosh = useRef(0);
   const projected = useMemo(() => new THREE.Vector3(), []);
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
@@ -249,7 +254,12 @@ function FloatingProduce({ trail, onSlice }: { trail: React.RefObject<Trail>; on
       const a = lastPointer.current;
       const dist = Math.hypot(latest.x - a.x, latest.y - a.y);
       const speed = dist / Math.max(1e-3, (latest.t - a.t) / 1000);
-      if (speed > SLICE_SPEED && dist > 4) swipe = { a, b: latest, speed };
+      if (speed > SLICE_SPEED && dist > 4) {
+        swipe = { a, b: latest, speed };
+        // One whoosh per swipe, not per frame.
+        if (latest.t - lastWhoosh.current > 220) sfx.whoosh(Math.min(1, speed / 3000));
+        lastWhoosh.current = latest.t;
+      }
     }
     lastPointer.current = latest;
 

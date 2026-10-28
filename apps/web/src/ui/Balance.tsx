@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { sfx } from "../audio/sfx.ts";
 
 const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 const grams = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} g`;
@@ -11,7 +12,12 @@ export function Balance({ left, right }: { left: number; right: number }) {
   const [angle, setAngle] = useState(0);
   useEffect(() => {
     const id = requestAnimationFrame(() => setAngle(target));
-    return () => cancelAnimationFrame(id);
+    // The beam starts moving after 0.6 s (CSS delay); knock when it lands.
+    const knock = setTimeout(() => sfx.clunk(), 1300);
+    return () => {
+      cancelAnimationFrame(id);
+      clearTimeout(knock);
+    };
   }, [target]);
 
   const counter = { transform: `translateX(-50%) rotate(${-angle}deg)` };

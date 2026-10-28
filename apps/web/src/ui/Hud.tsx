@@ -1,6 +1,8 @@
 import { OBJECT_KINDS, type ObjectKind } from "@slice-even/core";
 import { KIND_EMOJI, KIND_LABELS, rateError, type CutOutcome, type KindMode } from "../game.ts";
 import { Balance } from "./Balance.tsx";
+import { useEffect } from "react";
+import { sfx } from "../audio/sfx.ts";
 
 const MODES: readonly KindMode[] = ["random", ...OBJECT_KINDS];
 const modeLabel = (mode: KindMode) => (mode === "random" ? "🎲 Aleatório" : `${KIND_EMOJI[mode]} ${KIND_LABELS[mode]}`);
@@ -76,6 +78,13 @@ function Result({ outcome, onNext, onRetry }: { outcome: CutOutcome; onNext(): v
   const missed = smaller === 0;
   const sliver = !missed && smaller < 0.02;
   const label = missed ? "Errou o alvo!" : sliver ? "Só uma lasquinha!" : rating.label;
+  const tone = missed || sliver ? "bad" : rating.tone;
+
+  // Timed with the rating sticker popping in.
+  useEffect(() => {
+    const id = setTimeout(() => sfx.result(tone), 550);
+    return () => clearTimeout(id);
+  }, [tone]);
 
   return (
     <div className="result panel">

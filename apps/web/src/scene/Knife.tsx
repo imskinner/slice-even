@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { Plane } from "@slice-even/core";
+import { sfx } from "../audio/sfx.ts";
 
 interface KnifeProps {
   /** Apple extents in the parent group's local space. */
@@ -55,7 +56,9 @@ export function Knife({ top, bottom, center, lift, active, onCut }: KnifeProps) 
     if (!active) return;
     const el = gl.domElement;
     const cut = () => {
-      if (s.drop < 0) s.drop = 0;
+      if (s.drop >= 0) return;
+      s.drop = 0;
+      sfx.whoosh();
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();

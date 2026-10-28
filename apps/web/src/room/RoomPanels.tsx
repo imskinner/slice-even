@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import type { Cut, Player, Room, Round } from "../net/rooms.ts";
 import { rateError } from "../game.ts";
 import { Balance } from "../ui/Balance.tsx";
+import { sfx } from "../audio/sfx.ts";
 
 const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
@@ -34,6 +35,12 @@ export function Lobby({
   onStart(): void;
 }) {
   const [copied, setCopied] = useState(false);
+  // Pop when someone new arrives.
+  const [seen, setSeen] = useState(players.length);
+  useEffect(() => {
+    if (players.length > seen) sfx.pop();
+    setSeen(players.length);
+  }, [players.length, seen]);
   const link = `${location.origin}${location.pathname}?room=${room.code}`;
   const copy = () => {
     navigator.clipboard?.writeText(link).then(() => setCopied(true), () => undefined);
@@ -86,6 +93,9 @@ export function RoundStatus({
   const end = new Date(round.deadline).getTime() - DEADLINE_SLACK_MS;
   const total = Math.max(1, (end - new Date(round.started_at).getTime()) / 1000);
   const remaining = useCountdown(end);
+  useEffect(() => {
+    if (remaining > 0 && remaining <= 5) sfx.tick(remaining <= 3);
+  }, [remaining]);
   const iCut = cuts.some((c) => c.round_id === round.id && c.user_id === userId);
   const done = players.filter((p) => p.last_cut_round >= round.number).length;
 
@@ -154,6 +164,15 @@ export function RoundResults({
   const rows = ranking(round, players, cuts);
   const winner = players.find((p) => p.user_id === round.winner_id);
   const mine = cuts.find((c) => c.round_id === round.id && c.user_id === userId);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (round.winner_id === userId) sfx.fanfare();
+      else sfx.result(mine ? rateError(mine.error).tone : "bad");
+    }, 500);
+    return () => clearTimeout(id);
+    // Once per round.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [round.id]);
 
   return (
     <div className="result panel">

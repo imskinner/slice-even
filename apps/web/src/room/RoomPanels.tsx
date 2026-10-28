@@ -1,11 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { Cut, Player, Room, Round } from "../net/rooms.ts";
 import { rateError } from "../game.ts";
+import { Balance } from "../ui/Balance.tsx";
 
 const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 /** The server deadline includes 2 s of slack for latency; players see the real limit. */
 const DEADLINE_SLACK_MS = 2000;
+
+const AVATAR_COLORS = ["#ffc93c", "#3fc5f0", "#36d96b", "#ff8a3d", "#ff3e7f", "#b28dff"];
+const AVATAR_FACES = ["🍎", "🍊", "🍌", "🥒", "🥕", "🍅", "🍞", "🎂"];
+
+/** Stable fruit avatar per player id. */
+export function Avatar({ id }: { id: string }) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return (
+    <span className="avatar" style={{ background: AVATAR_COLORS[h % AVATAR_COLORS.length] }}>
+      {AVATAR_FACES[(h >>> 8) % AVATAR_FACES.length]}
+    </span>
+  );
+}
 
 export function Lobby({
   room,
@@ -25,15 +40,16 @@ export function Lobby({
   };
 
   return (
-    <div className="result lobby">
+    <div className="result panel lobby">
       <div className="lobby-label">Código da sala</div>
       <div className="room-code">{room.code}</div>
-      <button className="link" onClick={copy}>
+      <button className="btn btn-small btn-blue" onClick={copy}>
         {copied ? "Link copiado!" : "Copiar link de convite"}
       </button>
       <ul className="players">
         {players.map((p) => (
-          <li key={p.user_id}>
+          <li key={p.user_id} className="player">
+            <Avatar id={p.user_id} />
             {p.user_id === room.host_id ? "👑 " : ""}
             {p.name}
             {p.user_id === userId ? " (você)" : ""}
@@ -45,8 +61,8 @@ export function Lobby({
       </div>
       <div className="actions">
         {room.host_id === userId ? (
-          <button className="primary" onClick={onStart}>
-            Começar partida
+          <button className="btn btn-yellow" onClick={onStart}>
+            Começar partida!
           </button>
         ) : (
           <span className="stats">Aguardando o anfitrião começar…</span>
@@ -67,13 +83,20 @@ export function RoundStatus({
   userId: string;
   cuts: Cut[];
 }) {
-  const remaining = useCountdown(new Date(round.deadline).getTime() - DEADLINE_SLACK_MS);
+  const end = new Date(round.deadline).getTime() - DEADLINE_SLACK_MS;
+  const total = Math.max(1, (end - new Date(round.started_at).getTime()) / 1000);
+  const remaining = useCountdown(end);
   const iCut = cuts.some((c) => c.round_id === round.id && c.user_id === userId);
   const done = players.filter((p) => p.last_cut_round >= round.number).length;
 
   return (
     <div className="round-status">
-      <div className={`timer ${remaining <= 10 ? "urgent" : ""}`}>{remaining}s</div>
+      <div
+        className={`timer ${remaining <= 10 ? "urgent" : ""}`}
+        style={{ "--p": Math.min(1, remaining / total) } as CSSProperties}
+      >
+        {remaining}
+      </div>
       <div className="cut-chips">
         {players.map((p) => (
           <span key={p.user_id} className={p.last_cut_round >= round.number ? "chip done" : "chip"}>
@@ -130,12 +153,14 @@ export function RoundResults({
 }) {
   const rows = ranking(round, players, cuts);
   const winner = players.find((p) => p.user_id === round.winner_id);
+  const mine = cuts.find((c) => c.round_id === round.id && c.user_id === userId);
 
   return (
-    <div className="result">
+    <div className="result panel">
       <div className="rating great">
         {winner ? (winner.user_id === userId ? "Você venceu a rodada!" : `${winner.name} venceu!`) : "Ninguém cortou!"}
       </div>
+      {mine && <Balance left={mine.mass_back} right={mine.mass_front} />}
       <table className="ranking">
         <tbody>
           {rows.map(({ player, cut }) => {
@@ -143,7 +168,9 @@ export function RoundResults({
             return (
               <tr key={player.user_id} className={player.user_id === userId ? "me" : ""}>
                 <td>{player.user_id === round.winner_id ? "🏆" : ""}</td>
-                <td className="name">{player.name}</td>
+                <td className="name">
+                  <Avatar id={player.user_id} /> {player.name}
+                </td>
                 {cut ? (
                   <>
                     <td className="split">
@@ -169,7 +196,7 @@ export function RoundResults({
       </div>
       <div className="actions">
         {isHost ? (
-          <button className="primary" onClick={onNext} autoFocus>
+          <button className="btn btn-yellow" onClick={onNext} autoFocus>
             Próxima rodada
           </button>
         ) : (
@@ -203,7 +230,7 @@ export function FinalScoreboard({
   const last = ranking(round, players, cuts)[0];
 
   return (
-    <div className="result">
+    <div className="result panel">
       <div className="rating great">
         {champion ? (champion.user_id === userId ? "Você é o campeão! 🏆" : `${champion.name} é o campeão! 🏆`) : "Fim de jogo"}
       </div>
@@ -212,7 +239,9 @@ export function FinalScoreboard({
           {sorted.map((p, i) => (
             <tr key={p.user_id} className={p.user_id === userId ? "me" : ""}>
               <td>{["🥇", "🥈", "🥉"][i] ?? `${i + 1}º`}</td>
-              <td className="name">{p.name}</td>
+              <td className="name">
+                <Avatar id={p.user_id} /> {p.name}
+              </td>
               <td className="wins">{p.wins} rodadas</td>
               <td className="muted">erro médio {Number.isFinite(avgError(p)) ? pct(avgError(p)) : "—"}</td>
             </tr>
@@ -225,7 +254,7 @@ export function FinalScoreboard({
         </div>
       )}
       <div className="actions">
-        <button className="primary" onClick={onExit}>
+        <button className="btn btn-yellow" onClick={onExit}>
           Voltar ao início
         </button>
       </div>

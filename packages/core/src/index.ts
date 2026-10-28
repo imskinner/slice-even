@@ -50,6 +50,19 @@ export {
   DEFAULT_BREAD_RESOLUTION,
   type BreadParams,
 } from "./generators/bread.ts";
+export { generateOrange, ORANGE_DENSITY, type OrangeParams } from "./generators/orange.ts";
+export { generateTomato, TOMATO_DENSITY, type TomatoParams } from "./generators/tomato.ts";
+export { generateBanana, bananaBaseRadius, BANANA_DENSITY, type BananaParams } from "./generators/banana.ts";
+export { generateCarrot, carrotBaseRadius, CARROT_DENSITY, type CarrotParams } from "./generators/carrot.ts";
+export {
+  generateCake,
+  cakeShapeRatio,
+  CAKE_DENSITY,
+  type CakeParams,
+  type CakeFlavor,
+  type CakeFrosting,
+} from "./generators/cake.ts";
+export { buildHorizontalSweep, bowedSpine, roundTip, type HorizontalSweep } from "./geometry/sweep.ts";
 export { generateObject, OBJECT_KINDS, type ObjectKind, type AnyGeneratedObject } from "./generators/index.ts";
 export { meshToObj } from "./exportObj.ts";
 export { playerSeed, parseCutPlane } from "./round.ts";

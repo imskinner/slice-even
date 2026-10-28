@@ -11,6 +11,11 @@ const MASS_RANGE: Record<ObjectKind, [number, number]> = {
   apple: [100, 330],
   cucumber: [150, 500],
   bread: [100, 600],
+  orange: [130, 380],
+  tomato: [60, 300],
+  banana: [70, 300],
+  carrot: [30, 260],
+  cake: [120, 900],
 };
 
 describe.each(OBJECT_KINDS)("%s", (kind) => {
@@ -66,9 +71,18 @@ describe.each(OBJECT_KINDS)("%s", (kind) => {
 
 describe("shape sanity", () => {
   it("cucumbers and loaves lie along X", () => {
-    for (const kind of ["cucumber", "bread"] as const) {
+    for (const kind of ["cucumber", "bread", "banana", "carrot"] as const) {
       const { min, max } = meshBounds(generateObject(kind, "long").mesh);
       expect(max[0] - min[0], kind).toBeGreaterThan(1.5 * (max[2] - min[2]));
+    }
+  });
+
+  it("preview quality is lighter but still closed", () => {
+    for (const kind of OBJECT_KINDS) {
+      const full = generateObject(kind, "q");
+      const preview = generateObject(kind, "q", "preview");
+      expect(preview.mesh.indices.length, kind).toBeLessThan(full.mesh.indices.length / 2);
+      expect(findManifoldProblems(preview.mesh), kind).toEqual([]);
     }
   });
 

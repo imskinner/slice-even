@@ -7,6 +7,7 @@ import {
   appearanceFor,
   evaluateCut,
   isKindMode,
+  objectSpan,
   pickKind,
   randomSeed,
   type CutOutcome,
@@ -37,6 +38,7 @@ export function PracticeGame({ onExit }: { onExit(): void }) {
 
   const object = useMemo(() => generateObject(round.kind, round.seed), [round]);
   const look = useMemo(() => appearanceFor(round.seed), [round]);
+  const span = useMemo(() => objectSpan(object), [object]);
 
   // Keep the round in the URL so an object can be shared or reproduced.
   useEffect(() => {
@@ -65,7 +67,7 @@ export function PracticeGame({ onExit }: { onExit(): void }) {
 
   return (
     <>
-      <GameCanvas>
+      <GameCanvas span={span}>
         <SliceStage
           key={`${round.kind}:${round.seed}:${attempt}`}
           object={object}

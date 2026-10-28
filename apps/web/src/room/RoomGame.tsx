@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { generateObject, playerSeed, type CutResult, type Plane } from "@slice-even/core";
 import { GameCanvas } from "../scene/GameCanvas.tsx";
 import { SliceStage } from "../scene/SliceStage.tsx";
-import { appearanceFor, evaluateCut, KIND_LABELS, type CutOutcome } from "../game.ts";
+import { appearanceFor, evaluateCut, objectSpan, type CutOutcome } from "../game.ts";
+import { ItemBadge } from "../ui/Hud.tsx";
 import { finalizeRound, startRound, submitCut, useRoom, type Round } from "../net/rooms.ts";
 import { Lobby, RoundResults, FinalScoreboard, RoundStatus } from "./RoomPanels.tsx";
 
@@ -35,7 +36,11 @@ export function RoomGame({ roomId, userId, onExit }: RoomGameProps) {
   }, [code]);
 
   if (!state) {
-    return <div className="home">{error ? <p className="error">{error}</p> : <p className="tagline">Entrando na sala…</p>}</div>;
+    return (
+      <div className="home">
+        {error ? <p className="error panel" style={{ padding: 16 }}>{error}</p> : <p className="tagline">Entrando na sala…</p>}
+      </div>
+    );
   }
 
   const { room, players, rounds, cuts } = state;
@@ -51,14 +56,12 @@ export function RoomGame({ roomId, userId, onExit }: RoomGameProps) {
       )}
       <div className="hud">
         <header className="hud-top">
-          <button className="chip back" onClick={onExit}>
+          <button className="btn btn-small" onClick={onExit}>
             ← Sair
           </button>
-          <h1>Sala {room.code}</h1>
+          <h1 className="hud-title">Sala {room.code}</h1>
           {round && room.status !== "lobby" && (
-            <span className="seed">
-              Rodada {round.number}/{room.total_rounds} · {KIND_LABELS[round.kind]}
-            </span>
+            <ItemBadge kind={round.kind} extra={`rodada ${round.number}/${room.total_rounds}`} />
           )}
         </header>
 
@@ -104,6 +107,7 @@ function RoundStage({
   const seed = playerSeed(round.seed, userId);
   const object = useMemo(() => generateObject(round.kind, seed), [round.kind, seed]);
   const look = useMemo(() => appearanceFor(seed), [seed]);
+  const span = useMemo(() => objectSpan(object), [object]);
   const [local, setLocal] = useState<CutOutcome | null>(null);
 
   // After a reload the cut only exists on the server; rebuild the halves from it.
@@ -128,7 +132,7 @@ function RoundStage({
   );
 
   return (
-    <GameCanvas>
+    <GameCanvas span={span}>
       <SliceStage
         object={object}
         skinColor={look.skinColor}

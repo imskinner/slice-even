@@ -1,11 +1,11 @@
 import { OBJECT_KINDS, type ObjectKind } from "@slice-even/core";
-import { KIND_LABELS, rateError, type CutOutcome, type KindMode } from "../game.ts";
+import { KIND_EMOJI, KIND_LABELS, rateError, type CutOutcome, type KindMode } from "../game.ts";
+import { Balance } from "./Balance.tsx";
 
 const MODES: readonly KindMode[] = ["random", ...OBJECT_KINDS];
-const modeLabel = (mode: KindMode) => (mode === "random" ? "Aleatório" : KIND_LABELS[mode]);
+const modeLabel = (mode: KindMode) => (mode === "random" ? "🎲 Aleatório" : `${KIND_EMOJI[mode]} ${KIND_LABELS[mode]}`);
 
 const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
-const grams = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} g`;
 const mm = (cm: number) => `${(Math.abs(cm) * 10).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mm`;
 
 interface HudProps {
@@ -23,13 +23,11 @@ export function Hud({ kind, seed, mode, outcome, onMode, onNext, onRetry, onHome
   return (
     <div className="hud">
       <header className="hud-top">
-        <button className="chip back" onClick={onHome}>
+        <button className="btn btn-small" onClick={onHome}>
           ← Início
         </button>
-        <h1>Treino</h1>
-        <span className="seed">
-          {KIND_LABELS[kind]} · seed {seed}
-        </span>
+        <h1 className="hud-title">Treino</h1>
+        <ItemBadge kind={kind} extra={`#${seed}`} />
         <nav className="modes">
           {MODES.map((m) => (
             <button
@@ -46,14 +44,27 @@ export function Hud({ kind, seed, mode, outcome, onMode, onNext, onRetry, onHome
         </nav>
       </header>
 
-      {!outcome && (
-        <div className="hint">
-          <b>Mouse</b> mira · <b>Roda</b> ou <b>Q/E</b> gira · <b>Setas</b> ajuste fino · <b>Shift</b> precisão ·{" "}
-          <b>Botão direito</b> orbita · <b>Clique</b> ou <b>Espaço</b> corta
-        </div>
-      )}
-
+      {!outcome && <ControlsHint />}
       {outcome && <Result outcome={outcome} onNext={onNext} onRetry={onRetry} />}
+    </div>
+  );
+}
+
+export function ItemBadge({ kind, extra }: { kind: ObjectKind; extra?: string }) {
+  return (
+    <span className="item-badge">
+      <span className="emoji">{KIND_EMOJI[kind]}</span>
+      {KIND_LABELS[kind]}
+      {extra && <span className="muted">{extra}</span>}
+    </span>
+  );
+}
+
+export function ControlsHint() {
+  return (
+    <div className="hint">
+      <b>Mouse</b> mira · <b>Roda</b> ou <b>Q/E</b> gira · <b>Setas</b> ajuste fino · <b>Shift</b> precisão ·{" "}
+      <b>Botão direito</b> orbita · <b>Clique</b> ou <b>Espaço</b> corta
     </div>
   );
 }
@@ -67,15 +78,11 @@ function Result({ outcome, onNext, onRetry }: { outcome: CutOutcome; onNext(): v
   const label = missed ? "Errou o alvo!" : sliver ? "Só uma lasquinha!" : rating.label;
 
   return (
-    <div className="result">
+    <div className="result panel">
       <div className={`rating ${missed || sliver ? "bad" : rating.tone}`}>{label}</div>
       {!missed && (
         <>
-          <div className="halves">
-            <Half fraction={1 - score.fractionFront} mass={score.massBack} />
-            <div className="scale-divider" />
-            <Half fraction={score.fractionFront} mass={score.massFront} />
-          </div>
+          <Balance left={score.massBack} right={score.massFront} />
           <div className="stats">
             Erro <b>{pct(score.error)}</b> · {mm(outcome.offsetFromIdeal)} do corte perfeito{" "}
             <span className="legend">(linha verde)</span>
@@ -83,20 +90,13 @@ function Result({ outcome, onNext, onRetry }: { outcome: CutOutcome; onNext(): v
         </>
       )}
       <div className="actions">
-        <button onClick={onRetry}>Tentar de novo</button>
-        <button className="primary" onClick={onNext} autoFocus>
-          Próximo
+        <button className="btn" onClick={onRetry}>
+          Tentar de novo
+        </button>
+        <button className="btn btn-yellow" onClick={onNext} autoFocus>
+          Próximo →
         </button>
       </div>
-    </div>
-  );
-}
-
-function Half({ fraction, mass }: { fraction: number; mass: number }) {
-  return (
-    <div className="half">
-      <div className="half-pct">{pct(fraction)}</div>
-      <div className="half-mass">{grams(mass)}</div>
     </div>
   );
 }

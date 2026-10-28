@@ -5,6 +5,8 @@ import type { AnyGeneratedObject, Plane } from "@slice-even/core";
 import { splitGeometry, toBufferGeometry } from "./geometry.ts";
 import { Knife } from "./Knife.tsx";
 import { createMaterials } from "./materials.ts";
+import { Decoration } from "./Decoration.tsx";
+import { Splash } from "./Splash.tsx";
 import type { CutOutcome } from "../game.ts";
 
 interface SliceStageProps {
@@ -32,7 +34,7 @@ export function SliceStage({
   const geometry = useMemo(() => toBufferGeometry(object.mesh), [object]);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
-  const { skin, flesh } = useMemo(() => createMaterials(object, skinColor), [object, skinColor]);
+  const { skin, flesh, splash } = useMemo(() => createMaterials(object, skinColor), [object, skinColor]);
   useEffect(
     () => () => {
       skin.dispose();
@@ -46,9 +48,18 @@ export function SliceStage({
   const center = (box.min.y + box.max.y) / 2;
 
   const p = object.mesh.positions;
-  // The apple generator puts the stem cavity at vertex 0 (the top pole).
-  const stemBase: THREE.Vector3Tuple | null = object.kind === "apple" ? [p[0]!, p[1]!, p[2]!] : null;
-  const stem = stemBase && <Stem base={stemBase} tilt={stemTilt} />;
+  // Vertex 0 is the top pole (round shapes) or the -X tip (swept shapes).
+  const stemBase: THREE.Vector3Tuple = [p[0]!, p[1]!, p[2]!];
+  const stem = <Decoration kind={object.kind} anchor={stemBase} tilt={stemTilt} />;
+
+  const burst = useMemo(() => {
+    if (!outcome) return null;
+    const n = new THREE.Vector3(...outcome.plane.normal);
+    const t = new THREE.Vector3(-n.z, 0, n.x);
+    // Half the object's extent along the blade.
+    const width = Math.abs(t.x) * (box.max.x - box.min.x) * 0.3 + Math.abs(t.z) * (box.max.z - box.min.z) * 0.3;
+    return { origin: new THREE.Vector3(...outcome.plane.point), normal: n, width };
+  }, [outcome, box]);
 
   return (
     <group position={[0, lift, 0]}>
@@ -68,21 +79,21 @@ export function SliceStage({
           {stem}
         </>
       )}
+      {burst && (
+        <Splash
+          origin={burst.origin}
+          normal={burst.normal}
+          width={burst.width}
+          bottom={box.min.y}
+          top={box.max.y}
+          floor={box.min.y}
+          color={splash}
+        />
+      )}
       {outcome && revealIdeal && <IdealPlane plane={outcome.ideal} height={box.max.y - box.min.y + 2} center={center} />}
       {!(locked && !outcome) && (
         <Knife top={box.max.y} bottom={box.min.y} center={center} lift={lift} active={!outcome} onCut={onCut} />
       )}
-    </group>
-  );
-}
-
-function Stem({ base, tilt }: { base: THREE.Vector3Tuple; tilt: number }) {
-  return (
-    <group position={base} rotation={[tilt * 0.5, 0, tilt]}>
-      <mesh position={[0, 0.7, 0]} castShadow>
-        <cylinderGeometry args={[0.07, 0.11, 1.6, 8]} />
-        <meshStandardMaterial color="#5a3d22" roughness={0.9} />
-      </mesh>
     </group>
   );
 }
@@ -99,7 +110,7 @@ interface HalvesProps {
   flesh: THREE.Material;
   bounds: THREE.Box3;
   stem: ReactNode;
-  stemBase: THREE.Vector3Tuple | null;
+  stemBase: THREE.Vector3Tuple;
 }
 
 /**
@@ -139,7 +150,6 @@ function Halves({ geometry, plane, skin, flesh, bounds, stem, stemBase }: Halves
   }, [plane, bounds]);
 
   const stemOnFront =
-    stemBase !== null &&
     (stemBase[0] - plane.point[0]) * plane.normal[0] + (stemBase[2] - plane.point[2]) * plane.normal[2] >= 0;
 
   const outer = [useRef<THREE.Group>(null!), useRef<THREE.Group>(null!)];

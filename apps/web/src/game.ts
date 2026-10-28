@@ -1,6 +1,7 @@
 import {
   createRng,
   findBisectingPlane,
+  meshBounds,
   OBJECT_KINDS,
   type ObjectKind,
   scoreCut,
@@ -32,6 +33,12 @@ export function evaluateCut(object: GeneratedObject, plane: Plane): CutOutcome {
   return { plane, ideal, score, offsetFromIdeal };
 }
 
+/** Largest horizontal size of an object, cm, for camera framing. */
+export function objectSpan(object: GeneratedObject): number {
+  const { min, max } = meshBounds(object.mesh);
+  return Math.max(max[0] - min[0], max[2] - min[2]);
+}
+
 export interface Rating {
   label: string;
   tone: "great" | "good" | "meh" | "bad";
@@ -57,6 +64,22 @@ export const KIND_LABELS: Record<ObjectKind, string> = {
   apple: "Maçã",
   cucumber: "Pepino",
   bread: "Pão",
+  orange: "Laranja",
+  tomato: "Tomate",
+  banana: "Banana",
+  carrot: "Cenoura",
+  cake: "Bolo",
+};
+
+export const KIND_EMOJI: Record<ObjectKind, string> = {
+  apple: "🍎",
+  cucumber: "🥒",
+  bread: "🍞",
+  orange: "🍊",
+  tomato: "🍅",
+  banana: "🍌",
+  carrot: "🥕",
+  cake: "🎂",
 };
 
 export type KindMode = ObjectKind | "random";

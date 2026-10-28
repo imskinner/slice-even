@@ -1,7 +1,7 @@
 import type { Mesh } from "../mesh.ts";
 import { createRng, type Rng } from "../rng.ts";
 import { createNoise3, fbm3, type Noise3 } from "../noise.ts";
-import { buildPoleGrid } from "../geometry/poleGrid.ts";
+import { bowedSpine, buildHorizontalSweep, roundTip } from "../geometry/sweep.ts";
 import type { StarShapeOptions } from "../geometry/starShape.ts";
 import type { GeneratedObject } from "./types.ts";
 
@@ -47,7 +47,7 @@ export function sampleCucumberParams(rng: Rng): CucumberParams {
 
 /** Spine point at parameter s. The curve is a quadratic Bézier with x linear in s. */
 export function cucumberSpine(params: CucumberParams, s: number): [number, number, number] {
-  return [-params.length / 2 + params.length * s, 0, 4 * params.bend * s * (1 - s)];
+  return bowedSpine(params.length, params.bend).center(s);
 }
 
 /**
@@ -55,62 +55,36 @@ export function cucumberSpine(params: CucumberParams, s: number): [number, numbe
  * plus taper. The interior shader uses the same formula to find the skin.
  */
 export function cucumberBaseRadius(params: CucumberParams, s: number): number {
-  const u = Math.min(s, 1 - s) * params.length;
-  const tip = u < params.capLength ? Math.sqrt(Math.max(0, 1 - (1 - u / params.capLength) ** 2)) : 1;
+  const tip = roundTip(Math.min(s, 1 - s) * params.length, params.capLength);
   return params.radius * tip * (1 + params.taper * (s - 0.5));
 }
 
 export function buildCucumber(
   params: CucumberParams,
   noise: Noise3,
-  { rings, segments }: StarShapeOptions = DEFAULT_CUCUMBER_RESOLUTION,
+  resolution: StarShapeOptions = DEFAULT_CUCUMBER_RESOLUTION,
 ): Mesh {
-  const { length, bend, ridges } = params;
-
-  // Swept tube along the spine, closed by a pole at each tip.
-  return buildPoleGrid(rings, segments, (i, j, out, o) => {
-    // Cosine spacing packs rings near the tips, where the radius changes fastest.
-    const s = (1 - Math.cos((Math.PI * i) / rings)) / 2;
-    const [cx, cy, cz] = cucumberSpine(params, s);
-    if (i === 0 || i === rings) {
-      out[o] = cx;
-      out[o + 1] = cy;
-      out[o + 2] = cz;
-      return;
-    }
-
-    // Frame: T along the spine, B = +Y, N = B × T. With segments turning from
-    // N towards B and rings running along T, segment × ring = B × T = N: outwards.
-    const tx = length;
-    const tz = 4 * bend * (1 - 2 * s);
-    const tl = Math.hypot(tx, tz);
-    const nx = tz / tl;
-    const nz = -tx / tl;
-
-    const alpha = (2 * Math.PI * j) / segments;
-    const ca = Math.cos(alpha);
-    const sa = Math.sin(alpha);
-    const dx = ca * nx;
-    const dy = sa;
-    const dz = ca * nz;
-
-    const base = cucumberBaseRadius(params, s);
-    // Sample noise on the smooth surface so it does not depend on itself.
-    const px = cx + dx * base;
-    const py = cy + dy * base;
-    const pz = cz + dz * base;
-    const f = params.noise.frequency;
-    const w = params.warts.frequency;
-
-    let r = base;
-    if (ridges.count > 0) r *= 1 + ridges.amplitude * Math.cos(ridges.count * alpha);
-    r *= 1 + params.noise.amplitude * fbm3(noise, px * f, py * f, pz * f, 2);
-    r *= 1 + params.warts.amplitude * Math.max(0, noise(px * w + 31, py * w, pz * w) - 0.4);
-
-    out[o] = cx + dx * r;
-    out[o + 1] = cy + dy * r;
-    out[o + 2] = cz + dz * r;
-  });
+  const { ridges } = params;
+  const f = params.noise.frequency;
+  const w = params.warts.frequency;
+  return buildHorizontalSweep(
+    {
+      ...bowedSpine(params.length, params.bend),
+      radius: (s, alpha, dx, dy, dz, cx, cy, cz) => {
+        const base = cucumberBaseRadius(params, s);
+        // Sample noise on the smooth surface so it does not depend on itself.
+        const px = cx + dx * base;
+        const py = cy + dy * base;
+        const pz = cz + dz * base;
+        let r = base;
+        if (ridges.count > 0) r *= 1 + ridges.amplitude * Math.cos(ridges.count * alpha);
+        r *= 1 + params.noise.amplitude * fbm3(noise, px * f, py * f, pz * f, 2);
+        r *= 1 + params.warts.amplitude * Math.max(0, noise(px * w + 31, py * w, pz * w) - 0.4);
+        return r;
+      },
+    },
+    resolution,
+  );
 }
 
 export function generateCucumber(

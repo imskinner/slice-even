@@ -5,41 +5,50 @@ import { SliceStage } from "../scene/SliceStage.tsx";
 import { appearanceFor, evaluateCut, objectSpan, type CutOutcome } from "../game.ts";
 import { ItemBadge } from "../ui/Hud.tsx";
 import { sfx } from "../audio/sfx.ts";
-import { finalizeRound, startRound, submitCut, useRoom, type Round } from "../net/rooms.ts";
+import { useRoom, type Round } from "../net/rooms.ts";
 import { Lobby, RoundResults, FinalScoreboard, RoundStatus } from "./RoomPanels.tsx";
 
 interface RoomGameProps {
-  roomId: string;
-  userId: string;
+  code: string;
+  name: string;
   onExit(): void;
 }
 
-export function RoomGame({ roomId, userId, onExit }: RoomGameProps) {
-  const { state, error } = useRoom(roomId);
+export function RoomGame({ code, name, onExit }: RoomGameProps) {
+  const { state, error, fatal, connected, start, cut, playerId: userId } = useRoom(code, name);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const run = useCallback(async (action: () => Promise<unknown>) => {
+  const run = useCallback((action: () => void) => {
     setActionError(null);
     try {
-      await action();
+      action();
     } catch (e) {
       setActionError((e as Error).message);
     }
   }, []);
 
   // Put the code in the URL so a reload rejoins and the link can be shared.
-  const code = state?.room.code;
   useEffect(() => {
-    if (!code) return;
     const url = new URL(location.href);
     url.search = `?room=${code}`;
     history.replaceState(null, "", url);
   }, [code]);
 
-  if (!state) {
+  if (fatal || !state) {
     return (
       <div className="home">
-        {error ? <p className="error panel" style={{ padding: 16 }}>{error}</p> : <p className="tagline">Entrando na sala…</p>}
+        <div className="home-stack">
+          {fatal ? (
+            <div className="home-card panel">
+              <p className="error">{fatal}</p>
+              <button className="btn btn-yellow" onClick={onExit}>
+                Voltar ao início
+              </button>
+            </div>
+          ) : (
+            <p className="tagline">{connected ? "Entrando na sala…" : "Conectando ao servidor…"}</p>
+          )}
+        </div>
       </div>
     );
   }
@@ -51,7 +60,7 @@ export function RoomGame({ roomId, userId, onExit }: RoomGameProps) {
   return (
     <>
       {round ? (
-        <RoundStage key={round.id} round={round} userId={userId} cuts={cuts} onError={setActionError} />
+        <RoundStage key={round.id} round={round} userId={userId} cuts={cuts} cut={cut} onError={setActionError} />
       ) : (
         <GameCanvas />
       )}
@@ -67,7 +76,7 @@ export function RoomGame({ roomId, userId, onExit }: RoomGameProps) {
         </header>
 
         {room.status === "lobby" && (
-          <Lobby room={room} players={players} userId={userId} onStart={() => run(() => startRound(room.id))} />
+          <Lobby room={room} players={players} userId={userId} onStart={() => run(start)} />
         )}
         {room.status !== "lobby" && round?.status === "cutting" && (
           <RoundStatus round={round} players={players} userId={userId} cuts={cuts} />
@@ -80,15 +89,15 @@ export function RoomGame({ roomId, userId, onExit }: RoomGameProps) {
             cuts={cuts}
             userId={userId}
             isHost={isHost}
-            onNext={() => run(() => startRound(room.id))}
+            onNext={() => run(start)}
           />
         )}
         {room.status === "finished" && round?.status === "scored" && (
           <FinalScoreboard round={round} players={players} cuts={cuts} userId={userId} onExit={onExit} />
         )}
         {(actionError ?? error) && <div className="toast error">{actionError ?? error}</div>}
+        {!connected && <div className="toast">Reconectando…</div>}
       </div>
-      {round?.status === "cutting" && <RoundCloser round={round} />}
     </>
   );
 }
@@ -98,11 +107,13 @@ function RoundStage({
   round,
   userId,
   cuts,
+  cut,
   onError,
 }: {
   round: Round;
   userId: string;
   cuts: { round_id: string; user_id: string; plane: Plane }[];
+  cut(round: number, plane: Plane): Promise<CutResult>;
   onError(message: string | null): void;
 }) {
   const seed = playerSeed(round.seed, userId);
@@ -129,12 +140,12 @@ function RoundStage({
     (plane: Plane) => {
       setLocal(evaluateCut(object, plane));
       onError(null);
-      submitCut(round.id, plane).then(
-        (_score: CutResult) => undefined,
+      cut(round.number, plane).then(
+        () => undefined,
         (e: Error) => onError(e.message),
       );
     },
-    [object, round.id, onError],
+    [object, round.number, cut, onError],
   );
 
   return (
@@ -161,27 +172,4 @@ function useDeadlinePassed(round: Round): boolean {
     return () => clearTimeout(id);
   }, [deadline, passed]);
   return passed;
-}
-
-/**
- * When time runs out with cuts missing, any client may close the round; the
- * RPC is idempotent and checks the deadline on the server clock.
- */
-function RoundCloser({ round }: { round: Round }) {
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const attempt = () => {
-      finalizeRound(round.id).catch(() => {
-        // Usually "still running" because our clock is ahead; try again shortly.
-        if (!cancelled) timer = setTimeout(attempt, 2000);
-      });
-    };
-    timer = setTimeout(attempt, Math.max(0, new Date(round.deadline).getTime() - Date.now()) + 500);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [round.id, round.deadline]);
-  return null;
 }

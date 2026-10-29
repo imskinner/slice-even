@@ -1,6 +1,6 @@
 // Builds the web app and publishes it to the gh-pages branch, which GitHub
 // Pages serves at https://<owner>.github.io/slice-even/.
-// Needs apps/web/.env.local (Supabase URL and publishable key) for multiplayer.
+// Needs apps/web/.env.production.local (VITE_SERVER_URL of the Worker) for multiplayer.
 import { execSync } from "node:child_process";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,8 +10,8 @@ const dist = join(root, "apps", "web", "dist");
 const run = (cmd, cwd = root, env = process.env) => execSync(cmd, { cwd, env, stdio: "inherit" });
 const read = (cmd) => execSync(cmd, { cwd: root, encoding: "utf8" }).trim();
 
-if (!existsSync(join(root, "apps", "web", ".env.local"))) {
-  console.warn("warning: apps/web/.env.local is missing; the site will only have practice mode");
+if (!existsSync(join(root, "apps", "web", ".env.production.local"))) {
+  console.warn("warning: apps/web/.env.production.local is missing; the site will only have practice mode");
 }
 
 const remote = read("git remote get-url origin");

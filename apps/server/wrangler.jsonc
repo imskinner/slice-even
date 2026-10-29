@@ -1,0 +1,14 @@
+{
+  // Multiplayer backend: one Durable Object per room, on the Workers Free plan.
+  // Deployed at https://slice-even.slice-even-server.workers.dev
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "slice-even",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  // Free plan requires the SQLite storage backend.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
+}

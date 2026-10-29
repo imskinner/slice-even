@@ -1,156 +1,175 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FunctionsHttpError } from "@supabase/supabase-js";
-import type { CutResult, ObjectKind, Plane } from "@slice-even/core";
-import { supabase } from "./supabase.ts";
+import type { CutResult, Plane } from "@slice-even/core";
+import type { ClientMessage, RoomState, ServerMessage } from "@slice-even/server/protocol";
 
-export interface Room {
-  id: string;
-  code: string;
-  host_id: string;
-  status: "lobby" | "playing" | "finished";
-  total_rounds: number;
-  round_seconds: number;
-  current_round: number;
+export type { Cut, Player, Room, Round, RoomState } from "@slice-even/server/protocol";
+
+/**
+ * Multiplayer client: one WebSocket per room to its Durable Object on
+ * Cloudflare. The server is the source of truth; this keeps the latest
+ * state it sent and offers the two actions a player can take.
+ */
+
+const SERVER = (import.meta.env.VITE_SERVER_URL as string | undefined)?.replace(/\/$/, "");
+
+/** Multiplayer needs the server URL; practice mode works without it. */
+export const multiplayerConfigured = Boolean(SERVER);
+
+interface Identity {
+  playerId: string;
+  /** Proves on reconnect that this tab is the same player. */
+  token: string;
 }
 
-export interface Player {
-  room_id: string;
-  user_id: string;
-  name: string;
-  wins: number;
-  last_cut_round: number;
-  joined_at: string;
-}
+const IDENTITY_KEY = "slice-even:identity";
+let memoryIdentity: Identity | null = null;
 
-export interface Round {
-  id: string;
-  room_id: string;
-  number: number;
-  kind: ObjectKind;
-  seed: string;
-  status: "cutting" | "scored";
-  started_at: string;
-  deadline: string;
-  winner_id: string | null;
-}
-
-export interface Cut {
-  round_id: string;
-  user_id: string;
-  plane: Plane;
-  mass_front: number;
-  mass_back: number;
-  error: number;
-}
-
-export interface RoomState {
-  room: Room;
-  players: Player[];
-  rounds: Round[];
-  /** RLS returns your own cuts, plus everyone's for scored rounds. */
-  cuts: Cut[];
-}
-
-const MESSAGES: Record<string, string> = {
-  "room not found": "Sala não encontrada.",
-  "game already started": "Essa partida já começou.",
-  "room is full": "A sala está cheia (máximo 8).",
-  "only the host can start a round": "Só quem criou a sala pode começar.",
-  "current round is still running": "A rodada atual ainda não terminou.",
-  "game is over": "A partida acabou.",
-  "round still running": "A rodada ainda está rolando.",
-  "round is over": "A rodada já acabou.",
-  "time is up": "O tempo acabou!",
-  "already cut this round": "Você já cortou nesta rodada.",
-};
-
-const translate = (message: string) => MESSAGES[message] ?? message;
-
-async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase().rpc(fn, args);
-  if (error) throw new Error(translate(error.message));
-  return data as T;
-}
-
-export const createRoom = (name: string, totalRounds: number) =>
-  rpc<string>("create_room", { p_name: name, p_total_rounds: totalRounds });
-
-export const joinRoom = (code: string, name: string) => rpc<string>("join_room", { p_code: code, p_name: name });
-
-export const startRound = (roomId: string) => rpc<string>("start_round", { p_room: roomId });
-
-export const finalizeRound = (roundId: string) => rpc<null>("finalize_round", { p_round: roundId });
-
-/** The server regenerates the object from the seed and scores the plane. */
-export async function submitCut(roundId: string, plane: Plane): Promise<CutResult> {
-  const { data, error } = await supabase().functions.invoke<{ score: CutResult }>("submit-cut", {
-    body: { roundId, plane },
-  });
-  if (error) {
-    let message = error.message;
-    if (error instanceof FunctionsHttpError) {
-      const body = await error.context.json().catch(() => null);
-      if (body?.error) message = body.error;
-    }
-    throw new Error(translate(message));
+/**
+ * One player per browser tab: reloads keep you in your room, a second tab is
+ * a second player (handy for testing).
+ */
+export function identity(): Identity {
+  try {
+    const saved = sessionStorage.getItem(IDENTITY_KEY);
+    if (saved) return JSON.parse(saved) as Identity;
+    const fresh = { playerId: crypto.randomUUID(), token: crypto.randomUUID() };
+    sessionStorage.setItem(IDENTITY_KEY, JSON.stringify(fresh));
+    return fresh;
+  } catch {
+    memoryIdentity ??= { playerId: crypto.randomUUID(), token: crypto.randomUUID() };
+    return memoryIdentity;
   }
-  return data!.score;
 }
 
-async function fetchRoomState(roomId: string): Promise<RoomState> {
-  const db = supabase();
-  const [room, players, rounds, cuts] = await Promise.all([
-    db.from("rooms").select("*").eq("id", roomId).single(),
-    db.from("room_players").select("*").eq("room_id", roomId).order("joined_at"),
-    db.from("rounds").select("*").eq("room_id", roomId).order("number"),
-    db.from("cuts").select("round_id, user_id, plane, mass_front, mass_back, error").eq("room_id", roomId),
-  ]);
-  const failed = room.error ?? players.error ?? rounds.error ?? cuts.error;
-  if (failed) throw new Error(failed.message);
-  return { room: room.data, players: players.data ?? [], rounds: rounds.data ?? [], cuts: cuts.data ?? [] };
+export async function createRoom(totalRounds: number): Promise<string> {
+  if (!SERVER) throw new Error("Servidor multiplayer não configurado.");
+  const res = await fetch(`${SERVER}/api/rooms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ totalRounds }),
+  }).catch(() => null);
+  if (!res) throw new Error("Não foi possível falar com o servidor.");
+  const body = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+  if (!res.ok || !body.code) throw new Error(body.error ?? "Não foi possível criar a sala.");
+  return body.code;
 }
 
 /**
- * Live room state. Any change to the room's rows triggers a refetch; the data
- * is tiny, so this is simpler and safer than patching state per event.
+ * Server timestamps converted to this device's clock, so countdowns work
+ * even when the device clock is off.
  */
-export function useRoom(roomId: string) {
+function toLocalClock(state: RoomState, offsetMs: number): RoomState {
+  const shift = (iso: string) => new Date(new Date(iso).getTime() - offsetMs).toISOString();
+  return {
+    ...state,
+    rounds: state.rounds.map((r) => ({ ...r, started_at: shift(r.started_at), deadline: shift(r.deadline) })),
+  };
+}
+
+interface PendingCut {
+  resolve(score: CutResult): void;
+  reject(error: Error): void;
+}
+
+export function useRoom(code: string, name: string) {
   const [state, setState] = useState<RoomState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  const refresh = useCallback(() => {
-    clearTimeout(timer.current);
-    // Coalesce bursts (a cut touches cuts, room_players and rounds at once).
-    timer.current = setTimeout(() => {
-      fetchRoomState(roomId).then(
-        (next) => {
-          setState(next);
-          setError(null);
-        },
-        (e: Error) => setError(e.message),
-      );
-    }, 80);
-  }, [roomId]);
+  const [fatal, setFatal] = useState<string | null>(null);
+  const [connected, setConnected] = useState(false);
+  const socket = useRef<WebSocket | null>(null);
+  const pending = useRef(new Map<string, PendingCut>());
 
   useEffect(() => {
-    refresh();
-    const byRoom = `room_id=eq.${roomId}`;
-    const channel = supabase()
-      .channel(`room:${roomId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${roomId}` }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "room_players", filter: byRoom }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "rounds", filter: byRoom }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cuts", filter: byRoom }, refresh)
-      .subscribe((status) => {
-        // Catch up on anything missed while (re)connecting.
-        if (status === "SUBSCRIBED") refresh();
-      });
-    return () => {
-      clearTimeout(timer.current);
-      supabase().removeChannel(channel);
-    };
-  }, [roomId, refresh]);
+    if (!SERVER) {
+      setFatal("Servidor multiplayer não configurado.");
+      return;
+    }
+    const { playerId, token } = identity();
+    const url = `${SERVER.replace(/^http/, "ws")}/api/rooms/${encodeURIComponent(code)}/ws`;
+    let stopped = false;
+    let retry = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let pingTimer: ReturnType<typeof setInterval> | undefined;
 
-  return { state, error, refresh };
+    const connect = () => {
+      const ws = new WebSocket(url);
+      socket.current = ws;
+      ws.onopen = () => {
+        retry = 0;
+        setConnected(true);
+        ws.send(JSON.stringify({ type: "join", playerId, token, name } satisfies ClientMessage));
+        // Keeps proxies from dropping an idle connection.
+        pingTimer = setInterval(() => ws.send(JSON.stringify({ type: "ping" } satisfies ClientMessage)), 25_000);
+      };
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data as string) as ServerMessage;
+        switch (msg.type) {
+          case "state":
+            setState(toLocalClock(msg.state, msg.serverTime - Date.now()));
+            setError(null);
+            break;
+          case "cutResult":
+            pending.current.get(msg.requestId)?.resolve(msg.score);
+            pending.current.delete(msg.requestId);
+            break;
+          case "error":
+            if (msg.requestId && pending.current.has(msg.requestId)) {
+              pending.current.get(msg.requestId)!.reject(new Error(msg.message));
+              pending.current.delete(msg.requestId);
+            } else {
+              setError(msg.message);
+            }
+            break;
+          case "fatal":
+            stopped = true;
+            setFatal(msg.message);
+            break;
+        }
+      };
+      ws.onclose = () => {
+        clearInterval(pingTimer);
+        setConnected(false);
+        for (const p of pending.current.values()) p.reject(new Error("Conexão perdida."));
+        pending.current.clear();
+        if (stopped) return;
+        // Back off: 0.5 s, 1 s, 2 s ... up to 8 s.
+        retryTimer = setTimeout(connect, Math.min(8000, 500 * 2 ** retry++));
+      };
+    };
+    connect();
+
+    return () => {
+      stopped = true;
+      clearTimeout(retryTimer);
+      clearInterval(pingTimer);
+      socket.current?.close(1000, "leaving");
+      socket.current = null;
+    };
+  }, [code, name]);
+
+  const send = useCallback((msg: ClientMessage) => {
+    const ws = socket.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) throw new Error("Sem conexão com o servidor.");
+    ws.send(JSON.stringify(msg));
+  }, []);
+
+  const start = useCallback(() => send({ type: "start" }), [send]);
+
+  /** The server regenerates the object from the seed and scores the plane. */
+  const cut = useCallback(
+    (round: number, plane: Plane) =>
+      new Promise<CutResult>((resolve, reject) => {
+        const requestId = crypto.randomUUID();
+        pending.current.set(requestId, { resolve, reject });
+        try {
+          send({ type: "cut", requestId, round, plane });
+        } catch (e) {
+          pending.current.delete(requestId);
+          reject(e as Error);
+        }
+      }),
+    [send],
+  );
+
+  return { state, error, fatal, connected, start, cut, playerId: identity().playerId };
 }

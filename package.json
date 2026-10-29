@@ -9,12 +9,12 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p packages/core && tsc -p apps/web",
+    "typecheck": "tsc -p packages/core && tsc -p apps/web && tsc -p apps/server",
     "export:apples": "node packages/core/scripts/export-apples.ts",
     "dev": "npm run dev -w @slice-even/web",
-    "functions:sync": "node scripts/sync-core.mjs",
-    "functions:deploy": "npm run functions:sync && npx supabase functions deploy submit-cut --project-ref ohhwwzyzyzqgstothllx --use-api",
-    "deploy:pages": "node scripts/deploy-pages.mjs"
+    "deploy:pages": "node scripts/deploy-pages.mjs",
+    "server:dev": "npm run dev -w @slice-even/server",
+    "server:deploy": "npm run deploy -w @slice-even/server"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

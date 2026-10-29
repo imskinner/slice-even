@@ -1,7 +1,0 @@
-# Only what this project deliberately sets. `supabase config push` leaves
-# undeclared settings as they are on the remote project.
-project_id = "slice-even"
-
-[auth]
-# Players join with a name only; each browser tab signs in anonymously.
-enable_anonymous_sign_ins = true

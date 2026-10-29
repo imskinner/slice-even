@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { supabaseConfigured } from "./net/supabase.ts";
+import { multiplayerConfigured } from "./net/rooms.ts";
 import { HomeBackground } from "./home/HomeBackground.tsx";
 
 const NAME_KEY = "slice-even:name";
@@ -82,7 +82,7 @@ export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice }:
           <p className="tagline">Corte exatamente no meio. A balança não mente.</p>
 
           <div className="home-card panel">
-            {supabaseConfigured ? (
+            {multiplayerConfigured ? (
               <>
                 <span className="field-label">Seu nome</span>
                 <input
@@ -122,7 +122,7 @@ export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice }:
               </>
             ) : (
               <p className="muted">
-                Multiplayer desligado: configure o Supabase em <code>apps/web/.env.local</code>.
+                Multiplayer desligado: configure <code>VITE_SERVER_URL</code> em <code>apps/web/.env.local</code>.
               </p>
             )}
 

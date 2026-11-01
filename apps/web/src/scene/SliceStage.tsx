@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import type { AnyGeneratedObject, Plane } from "@slice-even/core";
@@ -20,6 +20,8 @@ interface SliceStageProps {
   locked?: boolean;
   /** Show where the perfect cut was. Multiplayer waits until the round is scored. */
   revealIdeal?: boolean;
+  /** Hide the object (not the knife) this many ms after mounting, until it is cut. */
+  hideAfterMs?: number;
 }
 
 /** The object on the board, the knife, and after the cut the two halves. */
@@ -31,7 +33,14 @@ export function SliceStage({
   onCut,
   locked = false,
   revealIdeal = true,
+  hideAfterMs,
 }: SliceStageProps) {
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    if (hideAfterMs === undefined) return;
+    const id = setTimeout(() => setHidden(true), hideAfterMs);
+    return () => clearTimeout(id);
+  }, [hideAfterMs]);
   const geometry = useMemo(() => toBufferGeometry(object.mesh), [object]);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -80,8 +89,10 @@ export function SliceStage({
         />
       ) : (
         <>
-          <mesh geometry={geometry} material={skin} castShadow receiveShadow />
-          {stem}
+          <group visible={!hidden}>
+            <mesh geometry={geometry} material={skin} castShadow receiveShadow />
+            {stem}
+          </group>
         </>
       )}
       {burst && (

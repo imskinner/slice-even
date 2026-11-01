@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Home, loadName } from "./Home.tsx";
 import { PracticeGame } from "./PracticeGame.tsx";
+import { DailyGame } from "./DailyGame.tsx";
 import { RoomGame } from "./room/RoomGame.tsx";
 import { createRoom, multiplayerConfigured } from "./net/rooms.ts";
 import { sfx, unlockOnGesture } from "./audio/sfx.ts";
@@ -15,6 +16,7 @@ document.addEventListener("click", (e) => {
 type Screen =
   | { type: "home" }
   | { type: "practice" }
+  | { type: "daily" }
   | { type: "room"; code: string; name: string };
 
 function setUrl(params: Record<string, string>) {
@@ -27,7 +29,11 @@ export function App() {
   const params = new URLSearchParams(location.search);
   const codeFromUrl = (params.get("room") ?? "").toUpperCase();
   const [screen, setScreen] = useState<Screen>(() =>
-    params.has("practice") || !multiplayerConfigured ? { type: "practice" } : { type: "home" },
+    params.has("practice") || !multiplayerConfigured
+      ? { type: "practice" }
+      : params.has("daily")
+        ? { type: "daily" }
+        : { type: "home" },
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +74,9 @@ export function App() {
   // be a new type on every render and remount the whole game.
   let content;
   switch (screen.type) {
+    case "daily":
+      content = <DailyGame onExit={goHome} onPractice={() => setScreen({ type: "practice" })} />;
+      break;
     case "practice":
       content = <PracticeGame onExit={goHome} />;
       break;
@@ -83,6 +92,7 @@ export function App() {
           onCreate={create}
           onJoin={(name, code) => enterRoom(code, name)}
           onPractice={() => setScreen({ type: "practice" })}
+          onDaily={() => setScreen({ type: "daily" })}
         />
       );
       break;

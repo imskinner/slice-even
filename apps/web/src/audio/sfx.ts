@@ -277,6 +277,30 @@ export const sfx = {
     }
   },
 
+  /** Snare roll building suspense before a reveal. */
+  drumroll(seconds = 1) {
+    const a = audio();
+    if (!a) return;
+    const t = a.ctx.currentTime;
+    const hits = Math.round(seconds * 22);
+    for (let i = 0; i < hits; i++) {
+      const p = i / hits;
+      noiseBurst(a, t + i / 22 + Math.random() * 0.006, { type: "bandpass", from: jitter(1800, 0.1), q: 0.8 }, {
+        decay: 0.035,
+        peak: 0.05 + 0.12 * p,
+      });
+    }
+  },
+
+  /** The cymbal-ish hit that lands on a reveal. */
+  reveal() {
+    const a = audio();
+    if (!a) return;
+    const t = a.ctx.currentTime;
+    noiseBurst(a, t, { type: "highpass", from: 5000 }, { decay: 0.5, peak: 0.18 });
+    tone(a, t, "sine", 110, 60, { decay: 0.25, peak: 0.4 });
+  },
+
   /** You won the round / the game. */
   fanfare() {
     const a = audio();

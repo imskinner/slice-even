@@ -1,4 +1,4 @@
-import type { CutResult, ObjectKind, Plane } from "@slice-even/core";
+import type { CutResult, ObjectKind, Plane, RoundRule } from "@slice-even/core";
 
 /**
  * Wire format between the browser and a room's Durable Object. The shapes
@@ -18,6 +18,8 @@ export interface Player {
   user_id: string;
   name: string;
   wins: number;
+  /** Game score: round N is worth N points (see LIMITS / room.ts). */
+  score: number;
   last_cut_round: number;
   joined_at: string;
   online: boolean;
@@ -29,10 +31,17 @@ export interface Round {
   kind: ObjectKind;
   /** Each player's object comes from playerSeed(seed, user_id) in core. */
   seed: string;
+  rule: RoundRule;
   status: "cutting" | "scored";
   started_at: string;
   deadline: string;
   winner_id: string | null;
+  /** Players who were in the room when the round started (late joiners wait). */
+  participants: string[];
+  /** Points earned this round, by player id, once scored. */
+  points: Record<string, number>;
+  /** When the next round starts on its own, if there is one. */
+  next_start_at: string | null;
 }
 
 export interface Cut {
@@ -41,6 +50,7 @@ export interface Cut {
   plane: Plane;
   mass_front: number;
   mass_back: number;
+  /** Distance from the round's goal (see cutError in core). */
   error: number;
 }
 
@@ -67,12 +77,28 @@ export type ServerMessage =
   | { type: "fatal"; message: string }
   | { type: "pong" };
 
+/** GET /api/daily and POST /api/daily responses. */
+export interface DailyResponse {
+  puzzle: { date: string; number: number; kind: ObjectKind; seed: string };
+  leaderboard: { name: string; error: number; you: boolean }[];
+  total: number;
+  /** Your result, once you have played today. */
+  mine: { score: CutResult; rank: number; total: number; beat: number; plane?: Plane } | null;
+  /** Milliseconds until the next challenge. */
+  nextInMs: number;
+}
+
 export const LIMITS = {
   maxPlayers: 8,
   maxName: 24,
   minRounds: 1,
   maxRounds: 20,
-  roundSeconds: 45,
+  roundSeconds: 20,
+  blitzSeconds: 8,
+  /** Results reveal: a beat per player plus the winner fanfare, then a pause. */
+  revealPerPlayerMs: 1400,
+  revealBaseMs: 2500,
+  betweenRoundsMs: 6000,
   /** Accept cuts that arrive this long after the deadline (network latency). */
   graceMs: 2000,
   /** Rooms with no activity for this long are deleted. */

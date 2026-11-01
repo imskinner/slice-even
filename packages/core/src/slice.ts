@@ -134,11 +134,11 @@ export function scoreCut(mesh: Mesh, plane: Plane, density: number): CutResult {
 }
 
 /**
- * The plane with the given normal that splits the volume exactly in half,
- * found by bisection along the normal. Used to show the ideal cut after a
- * round, and in tests.
+ * The plane with the given normal that leaves `frontFraction` of the volume
+ * on the side the normal points to, found by bisection along the normal.
+ * Used to show the ideal cut after a round, and in tests.
  */
-export function findBisectingPlane(mesh: Mesh, normal: Vec3, iterations = 60): Plane {
+export function findPlaneAtFraction(mesh: Mesh, normal: Vec3, frontFraction: number, iterations = 60): Plane {
   const len = Math.hypot(...normal);
   const n: Vec3 = [normal[0] / len, normal[1] / len, normal[2] / len];
   const { min, max } = meshBounds(mesh);
@@ -159,8 +159,14 @@ export function findBisectingPlane(mesh: Mesh, normal: Vec3, iterations = 60): P
   for (let i = 0; i < iterations; i++) {
     const mid = (lo + hi) / 2;
     const { front, back } = sliceVolumes(mesh, planeAt(mid));
-    if (front > back) lo = mid;
+    // Moving the plane along n shrinks the front side.
+    if (front / (front + back) > frontFraction) lo = mid;
     else hi = mid;
   }
   return planeAt((lo + hi) / 2);
+}
+
+/** The plane with the given normal that splits the volume exactly in half. */
+export function findBisectingPlane(mesh: Mesh, normal: Vec3, iterations = 60): Plane {
+  return findPlaneAtFraction(mesh, normal, 0.5, iterations);
 }

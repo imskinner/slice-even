@@ -1,6 +1,7 @@
 import {
   createRng,
-  findBisectingPlane,
+  cutError,
+  findPlaneAtFraction,
   meshBounds,
   OBJECT_KINDS,
   type ObjectKind,
@@ -8,11 +9,12 @@ import {
   type CutResult,
   type GeneratedObject,
   type Plane,
+  type RoundRule,
 } from "@slice-even/core";
 
 export interface CutOutcome {
   plane: Plane;
-  /** Plane with the same direction that would have split the mass exactly. */
+  /** Plane with the same direction that would have met the goal exactly. */
   ideal: Plane;
   score: CutResult;
   /** Signed distance from the ideal plane along the cut normal, cm. */
@@ -20,18 +22,54 @@ export interface CutOutcome {
 }
 
 /** Same math the scoring server will run. */
-export function evaluateCut(object: GeneratedObject, plane: Plane): CutOutcome {
-  const score = scoreCut(object.mesh, plane, object.density);
-  const ideal = findBisectingPlane(object.mesh, plane.normal);
+export function evaluateCut(object: GeneratedObject, plane: Plane, target = 0.5): CutOutcome {
+  const raw = scoreCut(object.mesh, plane, object.density);
+  const score = { ...raw, error: cutError(raw, target) };
   const n = plane.normal;
   const len = Math.hypot(...n);
-  const offsetFromIdeal =
+  const offsetTo = (ideal: Plane) =>
     ((plane.point[0] - ideal.point[0]) * n[0] +
       (plane.point[1] - ideal.point[1]) * n[1] +
       (plane.point[2] - ideal.point[2]) * n[2]) /
     len;
-  return { plane, ideal, score, offsetFromIdeal };
+  // For a non-half target either side may hold it: show the ideal plane nearer this cut.
+  const candidates = target === 0.5 ? [0.5] : [target, 1 - target];
+  const ideal = candidates
+    .map((f) => findPlaneAtFraction(object.mesh, plane.normal, f))
+    .reduce((best, p) => (Math.abs(offsetTo(p)) < Math.abs(offsetTo(best)) ? p : best));
+  return { plane, ideal, score, offsetFromIdeal: offsetTo(ideal) };
 }
+
+export interface RuleInfo {
+  emoji: string;
+  title: string;
+  /** One line telling the player what to do. */
+  goal: string;
+}
+
+const pctLabel = (f: number) => `${Math.round(f * 100)}%`;
+
+export function ruleInfo(rule: RoundRule): RuleInfo {
+  switch (rule.type) {
+    case "classic":
+      return { emoji: "⚖️", title: "Clássica", goal: "Corte exatamente no meio." };
+    case "target":
+      return {
+        emoji: "🎯",
+        title: `Alvo ${pctLabel(rule.target)} / ${pctLabel(1 - rule.target)}`,
+        goal: `Deixe ${pctLabel(rule.target)} do peso de um lado.`,
+      };
+    case "blitz":
+      return { emoji: "⚡", title: "Relâmpago", goal: "Meio exato, poucos segundos!" };
+    case "blind":
+      return { emoji: "🙈", title: "Às cegas", goal: "Memorize: o item some em instantes." };
+    case "twin":
+      return { emoji: "👯", title: "Mesma fruta", goal: "Todos cortam o mesmo item. Comparação direta!" };
+  }
+}
+
+/** Blind rounds hide the object this long after the round starts. */
+export const BLIND_AFTER_MS = 3000;
 
 /** Largest horizontal size of an object, cm, for camera framing. */
 export function objectSpan(object: GeneratedObject): number {

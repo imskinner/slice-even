@@ -1,7 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
-import type { ClientMessage, ServerMessage } from "./protocol.ts";
+import type { ClientMessage, DailyResponse, ServerMessage } from "./protocol.ts";
+import { dailyDate, dailyPuzzle, leaderboard, msUntilNextDaily, standingOf, submitDaily, type DailyData } from "./daily.ts";
 import {
   createRoomData,
+  currentRound,
   finalizeRound,
   isIdle,
   join,
@@ -15,6 +17,7 @@ import {
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
+  DAILY: DurableObjectNamespace<Daily>;
 }
 
 interface Attachment {
@@ -153,6 +156,11 @@ export class Room extends DurableObject<Env> {
       return;
     }
     finalizeRound(this.data, now);
+    // After the reveal, the next round starts on its own.
+    const round = currentRound(this.data);
+    if (round?.status === "scored" && round.nextStartAt && now >= round.nextStartAt) {
+      startRound(this.data, null, now, crypto.randomUUID().replaceAll("-", ""), Math.random);
+    }
     await this.save();
     this.broadcast();
   }
@@ -184,5 +192,61 @@ export class Room extends DurableObject<Env> {
       if (!playerId) continue;
       this.send(ws, { type: "state", state: publicView(this.data, playerId, online), you: playerId, serverTime });
     }
+  }
+}
+
+/**
+ * One instance per UTC date: that day's challenge entries and leaderboard.
+ * Plain request/response; no sockets needed.
+ */
+export class Daily extends DurableObject<Env> {
+  private data: DailyData | null = null;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    ctx.blockConcurrencyWhile(async () => {
+      this.data = (await ctx.storage.get<DailyData>("daily")) ?? null;
+    });
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const date = url.searchParams.get("date") ?? dailyDate(Date.now());
+    this.data ??= { date, entries: [] };
+    const data = this.data;
+    const now = Date.now();
+
+    const respond = (playerId: string, status = 200) => {
+      const mine = standingOf(data, playerId);
+      const entry = data.entries.find((e) => e.playerId === playerId);
+      const body: DailyResponse = {
+        puzzle: dailyPuzzle(data.date),
+        leaderboard: leaderboard(data, playerId),
+        total: data.entries.length,
+        mine: mine && { ...mine, plane: entry?.plane },
+        nextInMs: msUntilNextDaily(now),
+      };
+      return Response.json(body, { status });
+    };
+
+    if (request.method === "GET") return respond(url.searchParams.get("player") ?? "");
+
+    if (request.method === "POST") {
+      const body = (await request.json().catch(() => ({}))) as {
+        playerId?: string;
+        token?: string;
+        name?: string;
+        plane?: unknown;
+      };
+      try {
+        submitDaily(data, String(body.playerId ?? ""), String(body.token ?? ""), String(body.name ?? ""), body.plane, now);
+      } catch (e) {
+        if (!(e instanceof RoomError)) throw e;
+        return Response.json({ error: e.message }, { status: 409 });
+      }
+      await this.ctx.storage.put("daily", data);
+      return respond(String(body.playerId), 201);
+    }
+    return new Response("method not allowed", { status: 405 });
   }
 }

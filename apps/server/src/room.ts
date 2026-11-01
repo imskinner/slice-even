@@ -1,19 +1,25 @@
 import {
+  cutError,
   generateObject,
+  objectSeed,
   OBJECT_KINDS,
   parseCutPlane,
-  playerSeed,
+  ruleTarget,
   scoreCut,
   type CutResult,
   type ObjectKind,
   type Plane,
+  type RoundRule,
 } from "@slice-even/core";
 import { LIMITS, type RoomState } from "./protocol.ts";
 
 /**
  * A room's whole game state and rules, with no Cloudflare APIs in sight so
  * it can be unit tested. The Durable Object stores this object and calls
- * these functions; `now` is always passed in.
+ * these functions; `now` and randomness are always passed in.
+ *
+ * Scoring follows the TV show: round N is worth N points to its winner, so
+ * whoever is behind can always come back in the later rounds.
  */
 
 export interface PlayerRecord {
@@ -22,6 +28,7 @@ export interface PlayerRecord {
   token: string;
   name: string;
   wins: number;
+  score: number;
   lastCutRound: number;
   joinedAt: number;
 }
@@ -30,11 +37,15 @@ export interface RoundRecord {
   number: number;
   kind: ObjectKind;
   seed: string;
+  rule: RoundRule;
   status: "cutting" | "scored";
   startedAt: number;
   /** Server clock; includes LIMITS.graceMs of slack. */
   deadline: number;
   winnerId: string | null;
+  participants: string[];
+  points: Record<string, number>;
+  nextStartAt: number | null;
 }
 
 export interface CutRecord {
@@ -84,7 +95,8 @@ export function currentRound(data: RoomData): RoundRecord | null {
 
 /**
  * Adds a player, or reconnects one. The first player to join is the host.
- * New players can only join in the lobby; returning ones can come back anytime.
+ * Newcomers can join until the game is over; mid-game they play from the
+ * next round.
  */
 export function join(data: RoomData, playerId: string, token: string, rawName: string, now: number): PlayerRecord {
   const name = rawName.trim();
@@ -98,29 +110,76 @@ export function join(data: RoomData, playerId: string, token: string, rawName: s
     data.lastActivity = now;
     return existing;
   }
-  if (data.status !== "lobby") throw new RoomError("Essa partida já começou.");
+  if (data.status === "finished") throw new RoomError("Essa partida já acabou.");
   if (data.players.length >= LIMITS.maxPlayers) throw new RoomError(`A sala está cheia (máximo ${LIMITS.maxPlayers}).`);
 
-  const player: PlayerRecord = { id: playerId, token, name, wins: 0, lastCutRound: 0, joinedAt: now };
+  const player: PlayerRecord = { id: playerId, token, name, wins: 0, score: 0, lastCutRound: 0, joinedAt: now };
   data.players.push(player);
   data.hostId ??= playerId;
   data.lastActivity = now;
   return player;
 }
 
-export function startRound(data: RoomData, playerId: string, now: number, seed: string, random: () => number): RoundRecord {
-  if (data.hostId !== playerId) throw new RoomError("Só quem criou a sala pode começar.");
-  if (data.status === "finished" || data.rounds.length >= data.totalRounds) throw new RoomError("A partida acabou.");
-  if (currentRound(data)?.status === "cutting") throw new RoomError("A rodada atual ainda não terminou.");
+const TARGETS = [0.25, 0.3, 1 / 3, 0.4];
 
+/**
+ * The twist for round `number`: the first is always classic so newcomers
+ * learn the basic goal, the last gives everyone the same object for a
+ * head-to-head finale, and the ones in between are drawn from a weighted roulette.
+ */
+export function pickRule(number: number, total: number, random: () => number): RoundRule {
+  if (number === 1) return { type: "classic" };
+  if (number === total && total > 1) return { type: "twin" };
+  const roulette: [number, () => RoundRule][] = [
+    [3, () => ({ type: "classic" })],
+    [3, () => ({ type: "target", target: TARGETS[Math.floor(random() * TARGETS.length)]! })],
+    [1.5, () => ({ type: "blitz" })],
+    [1.5, () => ({ type: "blind" })],
+    [2, () => ({ type: "twin" })],
+  ];
+  let r = random() * roulette.reduce((s, [w]) => s + w, 0);
+  for (const [w, make] of roulette) {
+    if ((r -= w) < 0) return make();
+  }
+  return { type: "classic" };
+}
+
+/**
+ * Starts the next round. `playerId` is the host pressing the button, or null
+ * when the alarm starts it on its own after the previous round's reveal.
+ */
+export function startRound(
+  data: RoomData,
+  playerId: string | null,
+  now: number,
+  seed: string,
+  random: () => number,
+): RoundRecord {
+  const previous = currentRound(data);
+  if (playerId !== null && data.hostId !== playerId) throw new RoomError("Só quem criou a sala pode começar.");
+  if (playerId === null && (!previous?.nextStartAt || now < previous.nextStartAt)) {
+    throw new RoomError("Ainda não é hora da próxima rodada.");
+  }
+  if (data.status === "finished" || data.rounds.length >= data.totalRounds) throw new RoomError("A partida acabou.");
+  if (previous?.status === "cutting") throw new RoomError("A rodada atual ainda não terminou.");
+  if (data.players.length === 0) throw new RoomError("Não há jogadores na sala.");
+
+  const number = data.rounds.length + 1;
+  const rule = pickRule(number, data.totalRounds, random);
+  const seconds = rule.type === "blitz" ? LIMITS.blitzSeconds : data.roundSeconds;
+  if (previous) previous.nextStartAt = null;
   const round: RoundRecord = {
-    number: data.rounds.length + 1,
+    number,
     kind: OBJECT_KINDS[Math.floor(random() * OBJECT_KINDS.length)]!,
     seed,
+    rule,
     status: "cutting",
     startedAt: now,
-    deadline: now + data.roundSeconds * 1000 + LIMITS.graceMs,
+    deadline: now + seconds * 1000 + LIMITS.graceMs,
     winnerId: null,
+    participants: data.players.map((p) => p.id),
+    points: {},
+    nextStartAt: null,
   };
   data.rounds.push(round);
   data.status = "playing";
@@ -137,6 +196,7 @@ export function submitCut(data: RoomData, playerId: string, roundNumber: number,
   if (!player) throw new RoomError("Você não está nesta sala.");
   const round = currentRound(data);
   if (!round || round.number !== roundNumber || round.status !== "cutting") throw new RoomError("A rodada já acabou.");
+  if (!round.participants.includes(playerId)) throw new RoomError("Você entra na próxima rodada.");
   if (now > round.deadline) throw new RoomError("O tempo acabou!");
   if (data.cuts.some((c) => c.round === round.number && c.playerId === playerId)) {
     throw new RoomError("Você já cortou nesta rodada.");
@@ -144,8 +204,9 @@ export function submitCut(data: RoomData, playerId: string, roundNumber: number,
   const parsed = parseCutPlane(planeInput);
   if ("error" in parsed) throw new RoomError(`Corte inválido: ${parsed.error}`);
 
-  const object = generateObject(round.kind, playerSeed(round.seed, playerId));
-  const score = scoreCut(object.mesh, parsed.plane, object.density);
+  const object = generateObject(round.kind, objectSeed(round.seed, playerId, round.rule));
+  const raw = scoreCut(object.mesh, parsed.plane, object.density);
+  const score: CutResult = { ...raw, error: cutError(raw, ruleTarget(round.rule)) };
   data.cuts.push({
     round: round.number,
     playerId,
@@ -161,27 +222,55 @@ export function submitCut(data: RoomData, playerId: string, roundNumber: number,
   return score;
 }
 
+/** Bonus point for a cut within 1% of the goal, win or lose. */
+export const PRECISION_BONUS_ERROR = 0.01;
+
+/**
+ * Points for a finishing position in round N: the winner takes N (the TV
+ * show's rule), second gets half, third a quarter, rounded down.
+ */
+export function placementPoints(roundNumber: number, place: number): number {
+  return place > 2 ? 0 : Math.floor(roundNumber / 2 ** place);
+}
+
+/** How long clients spend revealing the results, so the next round waits for it. */
+export function revealDuration(players: number): number {
+  return LIMITS.revealBaseMs + LIMITS.revealPerPlayerMs * players;
+}
+
 /** Ranks the current round if everyone cut or time is up. Returns whether it closed. */
 export function finalizeRound(data: RoomData, now: number): boolean {
   const round = currentRound(data);
   if (!round || round.status !== "cutting") return false;
   const cuts = data.cuts.filter((c) => c.round === round.number);
-  if (now < round.deadline && cuts.length < data.players.length) return false;
+  if (now < round.deadline && cuts.length < round.participants.length) return false;
 
-  const best = [...cuts].sort((a, b) => a.error - b.error || a.submittedAt - b.submittedAt)[0];
+  const ranked = [...cuts].sort((a, b) => a.error - b.error || a.submittedAt - b.submittedAt);
+  ranked.forEach((cut, place) => {
+    const earned = placementPoints(round.number, place) + (cut.error < PRECISION_BONUS_ERROR ? 1 : 0);
+    round.points[cut.playerId] = earned;
+    const player = data.players.find((p) => p.id === cut.playerId);
+    if (player) player.score += earned;
+  });
   round.status = "scored";
-  round.winnerId = best?.playerId ?? null;
-  if (best) data.players.find((p) => p.id === best.playerId)!.wins += 1;
+  round.winnerId = ranked[0]?.playerId ?? null;
+  if (ranked[0]) {
+    const winner = data.players.find((p) => p.id === ranked[0]!.playerId);
+    if (winner) winner.wins += 1;
+  }
   if (data.rounds.length >= data.totalRounds) data.status = "finished";
+  else round.nextStartAt = now + revealDuration(round.participants.length) + LIMITS.betweenRoundsMs;
   data.lastActivity = now;
   return true;
 }
 
-/** When the Durable Object should wake up next: round deadline or idle cleanup. */
+/** When the Durable Object should wake up next: round deadline, next round, or idle cleanup. */
 export function nextAlarm(data: RoomData): number {
   const round = currentRound(data);
   const cleanup = data.lastActivity + LIMITS.idleMs;
-  return round?.status === "cutting" ? Math.min(round.deadline, cleanup) : cleanup;
+  if (round?.status === "cutting") return Math.min(round.deadline, cleanup);
+  if (round?.nextStartAt) return Math.min(round.nextStartAt, cleanup);
+  return cleanup;
 }
 
 export function isIdle(data: RoomData, now: number): boolean {
@@ -206,6 +295,7 @@ export function publicView(data: RoomData, viewerId: string, online: ReadonlySet
       user_id: p.id,
       name: p.name,
       wins: p.wins,
+      score: p.score,
       last_cut_round: p.lastCutRound,
       joined_at: iso(p.joinedAt),
       online: online.has(p.id),
@@ -215,10 +305,14 @@ export function publicView(data: RoomData, viewerId: string, online: ReadonlySet
       number: r.number,
       kind: r.kind,
       seed: r.seed,
+      rule: r.rule,
       status: r.status,
       started_at: iso(r.startedAt),
       deadline: iso(r.deadline),
       winner_id: r.winnerId,
+      participants: r.participants,
+      points: r.points,
+      next_start_at: r.nextStartAt ? iso(r.nextStartAt) : null,
     })),
     cuts: data.cuts
       .filter((c) => c.playerId === viewerId || scored.has(c.round))

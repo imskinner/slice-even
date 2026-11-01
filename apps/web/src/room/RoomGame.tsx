@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { generateObject, playerSeed, type CutResult, type Plane } from "@slice-even/core";
+import { generateObject, objectSeed, ruleTarget, type CutResult, type Plane } from "@slice-even/core";
 import { GameCanvas } from "../scene/GameCanvas.tsx";
 import { SliceStage } from "../scene/SliceStage.tsx";
-import { appearanceFor, evaluateCut, objectSpan, type CutOutcome } from "../game.ts";
+import { appearanceFor, BLIND_AFTER_MS, evaluateCut, objectSpan, type CutOutcome } from "../game.ts";
 import { ItemBadge } from "../ui/Hud.tsx";
-import { sfx } from "../audio/sfx.ts";
 import { useRoom, type Round } from "../net/rooms.ts";
-import { Lobby, RoundResults, FinalScoreboard, RoundStatus } from "./RoomPanels.tsx";
+import { Lobby, RoundResults, RoundStatus, RuleCard } from "./RoomPanels.tsx";
 
 interface RoomGameProps {
   code: string;
@@ -79,10 +78,14 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
           <Lobby room={room} players={players} userId={userId} onStart={() => run(start)} />
         )}
         {room.status !== "lobby" && round?.status === "cutting" && (
-          <RoundStatus round={round} players={players} userId={userId} cuts={cuts} />
+          <>
+            <RuleCard key={round.id} round={round} total={room.total_rounds} />
+            <RoundStatus round={round} players={players} userId={userId} cuts={cuts} />
+          </>
         )}
-        {round?.status === "scored" && room.status === "playing" && (
+        {round?.status === "scored" && (
           <RoundResults
+            key={round.id}
             room={room}
             round={round}
             players={players}
@@ -90,10 +93,8 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
             userId={userId}
             isHost={isHost}
             onNext={() => run(start)}
+            onExit={onExit}
           />
-        )}
-        {room.status === "finished" && round?.status === "scored" && (
-          <FinalScoreboard round={round} players={players} cuts={cuts} userId={userId} onExit={onExit} />
         )}
         {(actionError ?? error) && <div className="toast error">{actionError ?? error}</div>}
         {!connected && <div className="toast">Reconectando…</div>}
@@ -116,12 +117,8 @@ function RoundStage({
   cut(round: number, plane: Plane): Promise<CutResult>;
   onError(message: string | null): void;
 }) {
-  const seed = playerSeed(round.seed, userId);
-  // Ding when a fresh round opens (not when reloading into a finished one).
-  useEffect(() => {
-    if (round.status === "cutting") sfx.ding();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const seed = objectSeed(round.seed, userId, round.rule);
+  const target = ruleTarget(round.rule);
   const object = useMemo(() => generateObject(round.kind, seed), [round.kind, seed]);
   const look = useMemo(() => appearanceFor(seed), [seed]);
   const span = useMemo(() => objectSpan(object), [object]);
@@ -130,22 +127,29 @@ function RoundStage({
   // After a reload the cut only exists on the server; rebuild the halves from it.
   const savedPlane = cuts.find((c) => c.round_id === round.id && c.user_id === userId)?.plane;
   const outcome = useMemo(
-    () => local ?? (savedPlane ? evaluateCut(object, savedPlane) : null),
-    [local, savedPlane, object],
+    () => local ?? (savedPlane ? evaluateCut(object, savedPlane, target) : null),
+    [local, savedPlane, object, target],
   );
 
   const timeUp = useDeadlinePassed(round);
+  const playing = round.participants.includes(userId);
+  // Blind rounds: the object vanishes a few seconds after the round starts.
+  const [hideAfterMs] = useState(() =>
+    round.rule.type === "blind"
+      ? Math.max(0, new Date(round.started_at).getTime() + BLIND_AFTER_MS - Date.now())
+      : undefined,
+  );
 
   const handleCut = useCallback(
     (plane: Plane) => {
-      setLocal(evaluateCut(object, plane));
+      setLocal(evaluateCut(object, plane, target));
       onError(null);
       cut(round.number, plane).then(
         () => undefined,
         (e: Error) => onError(e.message),
       );
     },
-    [object, round.number, cut, onError],
+    [object, target, round.number, cut, onError],
   );
 
   return (
@@ -156,8 +160,9 @@ function RoundStage({
         stemTilt={look.stemTilt}
         outcome={outcome}
         onCut={handleCut}
-        locked={round.status === "scored" || timeUp}
+        locked={round.status === "scored" || timeUp || !playing}
         revealIdeal={round.status === "scored"}
+        hideAfterMs={round.status === "cutting" ? hideAfterMs : undefined}
       />
     </GameCanvas>
   );

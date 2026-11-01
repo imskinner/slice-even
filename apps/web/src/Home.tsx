@@ -27,6 +27,7 @@ interface HomeProps {
   onCreate(name: string, rounds: number): void;
   onJoin(name: string, code: string): void;
   onPractice(): void;
+  onDaily(): void;
 }
 
 export function Logo() {
@@ -49,7 +50,7 @@ export function Logo() {
   );
 }
 
-export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice }: HomeProps) {
+export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice, onDaily }: HomeProps) {
   const [name, setName] = useState(loadName);
   const [code, setCode] = useState(initialCode);
   const [rounds, setRounds] = useState(5);
@@ -128,9 +129,16 @@ export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice }:
 
             {error && <p className="error">{error}</p>}
 
-            <button className="btn btn-green" onClick={onPractice}>
-              🔪 Treinar sozinho
-            </button>
+            <div className="row">
+              {multiplayerConfigured && (
+                <button className="btn btn-pink" onClick={onDaily}>
+                  🗓️ Desafio do dia
+                </button>
+              )}
+              <button className="btn btn-green" onClick={onPractice}>
+                🔪 Treinar
+              </button>
+            </div>
           </div>
 
           <div className="home-hint">Passe o mouse rápido pelas frutas para fatiar!</div>

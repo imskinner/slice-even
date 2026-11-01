@@ -1,5 +1,5 @@
 import type { Vec3 } from "./mesh.ts";
-import type { Plane } from "./slice.ts";
+import type { CutResult, Plane } from "./slice.ts";
 
 /**
  * In a multiplayer round everyone gets the same kind of object but their own
@@ -31,4 +31,40 @@ export function parseCutPlane(input: unknown): { plane: Plane } | { error: strin
   if (Math.abs(normal[1]) > 1e-6 * Math.max(1, len)) return { error: "only vertical cuts are allowed" };
 
   return { plane: { point: [point[0], point[1], point[2]], normal: [normal[0] / len, 0, normal[2] / len] } };
+}
+
+/**
+ * What a round asks for. Most rounds are the classic "cut it in half"; the
+ * others reuse the same scoring with a twist.
+ */
+export type RoundRule =
+  | { type: "classic" }
+  /** Leave `target` of the mass on one side (either side counts). */
+  | { type: "target"; target: number }
+  /** Same goal, a few seconds on the clock. */
+  | { type: "blitz" }
+  /** The object disappears shortly after the round starts. */
+  | { type: "blind" }
+  /** Everyone gets the exact same object, for a direct comparison. */
+  | { type: "twin" };
+
+export function ruleTarget(rule: RoundRule): number {
+  return rule.type === "target" ? rule.target : 0.5;
+}
+
+/**
+ * How far a cut is from the goal, on the same 0..1 scale for every rule:
+ * 2·|fraction − target| for whichever side is closer to the target. For the
+ * classic 50% goal this equals |front − back| / total. A miss scores 1.
+ */
+export function cutError(result: CutResult, target = 0.5): number {
+  const total = result.massFront + result.massBack;
+  if (!(total > 0) || result.massFront === 0 || result.massBack === 0) return 1;
+  const f = result.fractionFront;
+  return Math.min(1, 2 * Math.min(Math.abs(f - target), Math.abs(1 - f - target)));
+}
+
+/** Seed of a player's object: their own, unless the round gives everyone the same one. */
+export function objectSeed(roundSeed: string, userId: string, rule: RoundRule): string {
+  return rule.type === "twin" ? `${roundSeed}:twin` : playerSeed(roundSeed, userId);
 }

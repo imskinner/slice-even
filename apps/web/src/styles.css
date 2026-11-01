@@ -707,3 +707,111 @@ select:focus {
   font-size: 18px;
   padding: 6px 10px;
 }
+
+/* ---------------------------------------------------------------- rounds */
+
+.rule-card {
+  position: fixed;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  padding: 18px 28px 20px;
+  text-align: center;
+  min-width: min(360px, 90vw);
+  animation: rule-in 2.3s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  pointer-events: none;
+  z-index: 5;
+}
+
+@keyframes rule-in {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4) rotate(-8deg); }
+  14% { opacity: 1; transform: translate(-50%, -50%) scale(1.08) rotate(2deg); }
+  22% { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+  85% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -120%) scale(0.6); }
+}
+
+.rule-round {
+  font-family: var(--display);
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+
+.rule-emoji {
+  font-size: 56px;
+  line-height: 1.1;
+}
+
+.rule-title {
+  font-family: var(--display);
+  font-size: 34px;
+  color: var(--teal-deep);
+}
+
+.rule-goal {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.rule-chip {
+  background: var(--mango);
+  border: 3px solid var(--ink);
+  box-shadow: 0 3px 0 var(--ink);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 14px;
+}
+
+.rule-chip b {
+  font-family: var(--display);
+  font-weight: 400;
+}
+
+.reveal-row {
+  animation: pop 0.4s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+.reveal-row.winner td {
+  background: #fff1c7;
+}
+
+.ranking .points,
+.ranking .total {
+  font-family: var(--display);
+  font-size: 18px;
+  text-align: right;
+  color: var(--teal-deep);
+}
+
+.scoreboard td {
+  padding: 4px 8px;
+}
+
+.daily-rank {
+  margin-top: 6px;
+  font-size: 15px;
+}
+
+.home-card .row .btn {
+  flex: 1;
+}
+
+/* Narrow screens: keep the balance pans inside the panel. */
+@media (max-width: 520px) {
+  .balance-beam {
+    left: 20%;
+    right: 20%;
+  }
+
+  .balance-pan {
+    width: 104px;
+  }
+
+  .dish .pct {
+    font-size: 21px;
+  }
+
+  .rating {
+    font-size: 28px;
+  }
+}

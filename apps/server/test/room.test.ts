@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { findBisectingPlane, generateObject, playerSeed } from "@slice-even/core";
+import { findBisectingPlane, findPlaneAtFraction, generateObject, objectSeed } from "@slice-even/core";
 import {
   createRoomData,
   finalizeRound,
   join,
   nextAlarm,
+  pickRule,
+  placementPoints,
   publicView,
   RoomError,
   startRound,
@@ -25,7 +27,7 @@ function lobby(players = ["ana", "bruno"]): RoomData {
 /** The cut that splits this player's object exactly in half. */
 function perfectPlane(data: RoomData, playerId: string) {
   const round = data.rounds.at(-1)!;
-  const object = generateObject(round.kind, playerSeed(round.seed, playerId));
+  const object = generateObject(round.kind, objectSeed(round.seed, playerId, round.rule));
   return findBisectingPlane(object.mesh, [1, 0, 0]);
 }
 
@@ -50,10 +52,12 @@ describe("joining", () => {
     for (let i = 0; i < LIMITS.maxPlayers; i++) join(data, `p${i}`, "t", `P${i}`, T0);
     expect(() => join(data, "late", "t", "Late", T0)).toThrow(/cheia/);
 
+    // Mid-game newcomers join and play from the next round.
     const started = lobby();
     startRound(started, "ana", T0, "seed1", fixed);
-    expect(() => join(started, "carla", "t", "Carla", T0)).toThrow(/começou/);
-    // But a player who was already in can come back.
+    join(started, "carla", "t", "Carla", T0);
+    expect(started.rounds[0]!.participants).not.toContain("carla");
+    expect(() => submitCut(started, "carla", 1, { point: [0, 0, 0], normal: [1, 0, 0] }, T0)).toThrow(/próxima/);
     expect(() => join(started, "bruno", "bruno-token", "Bruno", T0)).not.toThrow();
   });
 });
@@ -79,6 +83,9 @@ describe("rounds", () => {
     expect(data.rounds[0]!.status).toBe("scored");
     expect(data.rounds[0]!.winnerId).toBe("ana");
     expect(data.players.find((p) => p.id === "ana")!.wins).toBe(1);
+    // Round 1 is worth 1 point, plus the precision bonus for a perfect cut.
+    expect(data.rounds[0]!.points).toEqual({ ana: 2, bruno: 0 });
+    expect(data.players.find((p) => p.id === "ana")!.score).toBe(2);
   });
 
   it("rejects double cuts, wrong rounds, tilted knives and late cuts", () => {
@@ -131,5 +138,62 @@ describe("publicView", () => {
 
     submitCut(data, "bruno", 1, { point: [0, 0, 0], normal: [1, 0, 0] }, T0);
     expect(publicView(data, "bruno", new Set()).cuts).toHaveLength(2);
+  });
+});
+
+describe("show rules", () => {
+  it("round N is worth N to the winner, half to second, a quarter to third", () => {
+    expect([0, 1, 2, 3].map((p) => placementPoints(8, p))).toEqual([8, 4, 2, 0]);
+    expect([0, 1, 2].map((p) => placementPoints(1, p))).toEqual([1, 0, 0]);
+  });
+
+  it("opens classic, ends head-to-head, and varies in between", () => {
+    expect(pickRule(1, 5, Math.random)).toEqual({ type: "classic" });
+    expect(pickRule(5, 5, Math.random)).toEqual({ type: "twin" });
+    const seen = new Set<string>();
+    let x = 0;
+    const sweep = () => (x = (x + 0.137) % 1);
+    for (let i = 0; i < 200; i++) seen.add(pickRule(3, 5, sweep).type);
+    expect([...seen].sort()).toEqual(["blind", "blitz", "classic", "target", "twin"]);
+  });
+
+  it("twin rounds give everyone the same object", () => {
+    const data = lobby();
+    const round = startRound(data, "ana", T0, "s", fixed);
+    round.rule = { type: "twin" };
+    const a = generateObject(round.kind, objectSeed(round.seed, "ana", round.rule));
+    const b = generateObject(round.kind, objectSeed(round.seed, "bruno", round.rule));
+    expect(a.mesh.positions).toEqual(b.mesh.positions);
+  });
+
+  it("target rounds score against the target, either side", () => {
+    const data = lobby(["solo"]);
+    const round = startRound(data, "solo", T0, "s", fixed);
+    round.rule = { type: "target", target: 0.3 };
+    const object = generateObject(round.kind, objectSeed(round.seed, "solo", round.rule));
+    const plane = findPlaneAtFraction(object.mesh, [1, 0, 0], 0.7);
+    expect(submitCut(data, "solo", 1, plane, T0).error).toBeLessThan(1e-6);
+  });
+
+  it("starts the next round on its own after the reveal, and the host can skip ahead", () => {
+    const data = lobby();
+    startRound(data, "ana", T0, "s1", fixed);
+    for (const id of ["ana", "bruno"]) submitCut(data, id, 1, { point: [0, 0, 0], normal: [1, 0, 0] }, T0 + 1000);
+    const next = data.rounds[0]!.nextStartAt!;
+    expect(next).toBeGreaterThan(T0 + 1000);
+    expect(nextAlarm(data)).toBe(next);
+    expect(() => startRound(data, null, next - 1, "s2", fixed)).toThrow(/hora/);
+    expect(startRound(data, null, next, "s2", fixed).number).toBe(2);
+    expect(data.rounds[0]!.nextStartAt).toBeNull();
+  });
+
+  it("blitz rounds are short", () => {
+    const data = lobby();
+    startRound(data, "ana", T0, "s", fixed);
+    for (const id of ["ana", "bruno"]) submitCut(data, id, 1, { point: [0, 0, 0], normal: [1, 0, 0] }, T0);
+    // 0.6 lands on the blitz slice of the roulette (weights 3/3/1.5/1.5/2).
+    const second = startRound(data, "ana", T0 + 5000, "s2", () => 0.6);
+    expect(second.rule.type).toBe("blitz");
+    expect(second.deadline - second.startedAt).toBe(LIMITS.blitzSeconds * 1000 + LIMITS.graceMs);
   });
 });

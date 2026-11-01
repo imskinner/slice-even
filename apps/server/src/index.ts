@@ -1,11 +1,14 @@
 import type { Env } from "./durable.ts";
+import { dailyDate } from "./daily.ts";
 
-export { Room } from "./durable.ts";
+export { Room, Daily } from "./durable.ts";
 
 /**
  * HTTP entry point:
  *   POST /api/rooms            { totalRounds }  ->  { code }
  *   GET  /api/rooms/:code/ws   WebSocket to that room's Durable Object
+ *   GET  /api/daily?player=id   today's challenge, leaderboard, your result
+ *   POST /api/daily             { playerId, token, name, plane }: your one attempt
  */
 
 const CORS = {
@@ -54,6 +57,15 @@ export default {
       if (!CODE.test(code)) return json(400, { error: "Código inválido." });
       if (request.headers.get("Upgrade") !== "websocket") return json(426, { error: "Expected WebSocket" });
       return env.ROOMS.get(env.ROOMS.idFromName(code)).fetch(request);
+    }
+
+    if (url.pathname === "/api/daily" && (request.method === "GET" || request.method === "POST")) {
+      // Each UTC day has its own Durable Object.
+      const date = dailyDate(Date.now());
+      const target = new URL(request.url);
+      target.searchParams.set("date", date);
+      const res = await env.DAILY.get(env.DAILY.idFromName(date)).fetch(new Request(target, request));
+      return new Response(res.body, { status: res.status, headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
     if (url.pathname === "/api/health") return json(200, { ok: true });

@@ -17,6 +17,7 @@ export {
   sliceVolumes,
   scoreCut,
   findBisectingPlane,
+  findPlaneAtFraction,
   type Plane,
   type SliceVolumes,
   type CutResult,
@@ -65,4 +66,4 @@ export {
 export { buildHorizontalSweep, bowedSpine, roundTip, type HorizontalSweep } from "./geometry/sweep.ts";
 export { generateObject, OBJECT_KINDS, type ObjectKind, type AnyGeneratedObject } from "./generators/index.ts";
 export { meshToObj } from "./exportObj.ts";
-export { playerSeed, parseCutPlane } from "./round.ts";
+export { playerSeed, parseCutPlane, ruleTarget, cutError, objectSeed, type RoundRule } from "./round.ts";

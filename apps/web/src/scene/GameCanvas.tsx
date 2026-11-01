@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { woodMaterial } from "./materials.ts";
 import { Kitchen } from "./Kitchen.tsx";
+import { TouchControls } from "../ui/TouchControls.tsx";
 
 /**
  * Soft studio reflections without downloading an HDR: three's procedural
@@ -70,41 +71,46 @@ function FrameCamera({ span }: { span: number }) {
  */
 export function GameCanvas({ children, span = 9 }: { children?: ReactNode; span?: number }) {
   return (
-    <Canvas shadows="percentage" camera={{ position: [0, 15, 26], fov: 35 }} gl={{ alpha: true }}>
-      <FrameCamera span={span} />
-      <StudioEnvironment />
-      {/* Distant parts of the kitchen fade into the wall color. */}
-      <fog attach="fog" args={["#0f5c66", 90, 210]} />
-      <hemisphereLight args={["#fff4e6", "#1d6e73", 0.3]} />
-      <directionalLight
-        position={[16, 36, 20]}
-        intensity={1.9}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-34}
-        shadow-camera-right={34}
-        shadow-camera-top={30}
-        shadow-camera-bottom={-30}
-        shadow-camera-far={120}
-        shadow-bias={-0.0005}
-        shadow-radius={4}
-      />
-      {/* Warm daylight from the window side. */}
-      <directionalLight position={[-30, 20, -10]} intensity={0.8} color="#ffd29a" />
-      <Kitchen />
-      <Board />
-      {children}
-      <OrbitControls
-        target={TARGET.toArray()}
-        enableZoom={false}
-        enablePan={false}
-        minPolarAngle={0.2}
-        maxPolarAngle={1.35}
-        // Keep the camera in front of the board: swinging round would put it behind the wall.
-        minAzimuthAngle={-1.2}
-        maxAzimuthAngle={1.2}
-        mouseButtons={{ LEFT: undefined, MIDDLE: undefined, RIGHT: THREE.MOUSE.ROTATE }}
-      />
-    </Canvas>
+    <>
+      <Canvas shadows="percentage" camera={{ position: [0, 15, 26], fov: 35 }} gl={{ alpha: true }}>
+        <FrameCamera span={span} />
+        <StudioEnvironment />
+        {/* Distant parts of the kitchen fade into the wall color. */}
+        <fog attach="fog" args={["#0f5c66", 90, 210]} />
+        <hemisphereLight args={["#fff4e6", "#1d6e73", 0.3]} />
+        <directionalLight
+          position={[16, 36, 20]}
+          intensity={1.9}
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-camera-left={-34}
+          shadow-camera-right={34}
+          shadow-camera-top={30}
+          shadow-camera-bottom={-30}
+          shadow-camera-far={120}
+          shadow-bias={-0.0005}
+          shadow-radius={4}
+        />
+        {/* Warm daylight from the window side. */}
+        <directionalLight position={[-30, 20, -10]} intensity={0.8} color="#ffd29a" />
+        <Kitchen />
+        <Board />
+        {children}
+        <OrbitControls
+          target={TARGET.toArray()}
+          enableZoom={false}
+          enablePan={false}
+          minPolarAngle={0.2}
+          maxPolarAngle={1.35}
+          // Keep the camera in front of the board: swinging round would put it behind the wall.
+          minAzimuthAngle={-1.2}
+          maxAzimuthAngle={1.2}
+          mouseButtons={{ LEFT: undefined, MIDDLE: undefined, RIGHT: THREE.MOUSE.ROTATE }}
+          // One finger aims the knife; two fingers orbit.
+          touches={{ ONE: undefined, TWO: THREE.TOUCH.DOLLY_ROTATE }}
+        />
+      </Canvas>
+      <TouchControls />
+    </>
   );
 }

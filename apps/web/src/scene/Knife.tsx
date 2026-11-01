@@ -23,11 +23,23 @@ const RAISE_SECONDS = 0.5;
 const EXIT_HEIGHT = 25;
 /** Mouse movement multiplier while Shift is held. */
 const PRECISE_FACTOR = 0.15;
+/** Finger drags move the knife relative to where it is, a bit slower than the finger. */
+const TOUCH_FACTOR = 0.6;
 const AIM_LIMIT = 10;
+
+/**
+ * Window events for on-screen controls (touch): turn the knife, cut, and
+ * the knife announcing whether it is waiting for a cut.
+ */
+export const KNIFE_TURN = "knife:turn";
+export const KNIFE_CUT = "knife:cut";
+export const KNIFE_STATE = "knife:state";
 
 /**
  * Vertical knife that follows the mouse over the apple. Wheel or Q/E turn it,
  * arrows nudge it, Shift slows everything down, click or Space cuts.
+ * On touch screens a finger drags it (relative, so the finger never covers
+ * the cut) and the TouchControls buttons turn it and cut.
  * Coordinates are the parent group's (the apple's) local space.
  */
 export function Knife({ top, bottom, center, lift, active, onCut }: KnifeProps) {
@@ -42,6 +54,9 @@ export function Knife({ top, bottom, center, lift, active, onCut }: KnifeProps) 
     angle: 0,
     precise: false,
     lastHit: null as THREE.Vector3 | null,
+    /** Last input was a finger; a finger is down right now. */
+    touch: false,
+    fingerDown: false,
     /** -1 while aiming, 0..1 while dropping, then back down to 0 while raising. */
     drop: -1,
     fired: false,
@@ -65,8 +80,22 @@ export function Knife({ top, bottom, center, lift, active, onCut }: KnifeProps) 
       s.angle += e.deltaY * (s.precise ? 0.0003 : 0.0015);
     };
     const onPointerDown = (e: PointerEvent) => {
+      s.touch = e.pointerType === "touch";
+      if (s.touch) {
+        // Touching only grabs the knife; the Cut button cuts.
+        s.fingerDown = e.isPrimary;
+        s.lastHit = null;
+        return;
+      }
       if (e.button === 0) cut();
     };
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === "touch" && e.isPrimary) s.fingerDown = false;
+    };
+    const onTurn = (e: Event) => {
+      s.angle += (e as CustomEvent<number>).detail;
+    };
+    window.dispatchEvent(new CustomEvent(KNIFE_STATE, { detail: true }));
     const onKeyDown = (e: KeyboardEvent) => {
       s.precise = e.shiftKey;
       const step = s.precise ? 0.02 : 0.1; // cm
@@ -99,24 +128,36 @@ export function Knife({ top, bottom, center, lift, active, onCut }: KnifeProps) 
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener(KNIFE_TURN, onTurn);
+    window.addEventListener(KNIFE_CUT, cut);
     return () => {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener(KNIFE_TURN, onTurn);
+      window.removeEventListener(KNIFE_CUT, cut);
+      window.dispatchEvent(new CustomEvent(KNIFE_STATE, { detail: false }));
     };
   }, [active, gl, s]);
 
   useFrame((_, dt) => {
-    if (active && s.drop < 0) {
+    if (active && s.drop < 0 && (!s.touch || s.fingerDown)) {
       raycaster.setFromCamera(pointer, camera);
       if (raycaster.ray.intersectPlane(aimPlane, hit)) {
         const last = s.lastHit;
-        if (last && s.precise) {
-          s.x += (hit.x - last.x) * PRECISE_FACTOR;
-          s.z += (hit.z - last.z) * PRECISE_FACTOR;
+        const relative = s.touch ? TOUCH_FACTOR : s.precise ? PRECISE_FACTOR : 0;
+        if (last && relative) {
+          s.x += (hit.x - last.x) * relative;
+          s.z += (hit.z - last.z) * relative;
+        } else if (s.touch) {
+          // First frame of a drag: just remember where the finger is.
         } else if (!last || hit.distanceToSquared(last) > 1e-8) {
           // Only follow when the mouse actually moved, so arrow nudges stick.
           s.x = hit.x;

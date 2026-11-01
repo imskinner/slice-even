@@ -28,6 +28,7 @@ interface HomeProps {
   onJoin(name: string, code: string): void;
   onPractice(): void;
   onDaily(): void;
+  onRecords(): void;
 }
 
 export function Logo() {
@@ -50,7 +51,7 @@ export function Logo() {
   );
 }
 
-export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice, onDaily }: HomeProps) {
+export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice, onDaily, onRecords }: HomeProps) {
   const [name, setName] = useState(loadName);
   const [code, setCode] = useState(initialCode);
   const [rounds, setRounds] = useState(5);
@@ -141,6 +142,9 @@ export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice, o
             </div>
           </div>
 
+          <button className="btn btn-small" onClick={onRecords}>
+            🏅 Recordes e conquistas
+          </button>
           <div className="home-hint">Passe o mouse rápido pelas frutas para fatiar!</div>
         </div>
       </div>

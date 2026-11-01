@@ -6,6 +6,7 @@ import { RoomGame } from "./room/RoomGame.tsx";
 import { createRoom, multiplayerConfigured } from "./net/rooms.ts";
 import { sfx, unlockOnGesture } from "./audio/sfx.ts";
 import { SoundToggle } from "./ui/SoundToggle.tsx";
+import { AchievementToast, RecordsScreen } from "./progress/Achievements.tsx";
 
 unlockOnGesture();
 // Every chunky button and chip clicks.
@@ -17,6 +18,7 @@ type Screen =
   | { type: "home" }
   | { type: "practice" }
   | { type: "daily" }
+  | { type: "records" }
   | { type: "room"; code: string; name: string };
 
 function setUrl(params: Record<string, string>) {
@@ -74,6 +76,9 @@ export function App() {
   // be a new type on every render and remount the whole game.
   let content;
   switch (screen.type) {
+    case "records":
+      content = <RecordsScreen onExit={goHome} />;
+      break;
     case "daily":
       content = <DailyGame onExit={goHome} onPractice={() => setScreen({ type: "practice" })} />;
       break;
@@ -93,6 +98,7 @@ export function App() {
           onJoin={(name, code) => enterRoom(code, name)}
           onPractice={() => setScreen({ type: "practice" })}
           onDaily={() => setScreen({ type: "daily" })}
+          onRecords={() => setScreen({ type: "records" })}
         />
       );
       break;
@@ -102,6 +108,7 @@ export function App() {
     <>
       {content}
       <SoundToggle />
+      <AchievementToast />
     </>
   );
 }

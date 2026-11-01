@@ -66,6 +66,17 @@ function toLocalClock(state: RoomState, offsetMs: number): RoomState {
   };
 }
 
+export interface Reaction {
+  id: number;
+  from: string;
+  name: string;
+  emoji: string;
+}
+
+/** How long a reaction stays on screen. */
+const REACTION_MS = 2600;
+let reactionIds = 0;
+
 interface PendingCut {
   resolve(score: CutResult): void;
   reject(error: Error): void;
@@ -76,6 +87,7 @@ export function useRoom(code: string, name: string) {
   const [error, setError] = useState<string | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [reactions, setReactions] = useState<Reaction[]>([]);
   const socket = useRef<WebSocket | null>(null);
   const pending = useRef(new Map<string, PendingCut>());
 
@@ -120,6 +132,12 @@ export function useRoom(code: string, name: string) {
               setError(msg.message);
             }
             break;
+          case "reaction": {
+            const reaction = { id: ++reactionIds, from: msg.from, name: msg.name, emoji: msg.emoji };
+            setReactions((list) => [...list, reaction]);
+            setTimeout(() => setReactions((list) => list.filter((r) => r.id !== reaction.id)), REACTION_MS);
+            break;
+          }
           case "fatal":
             stopped = true;
             setFatal(msg.message);
@@ -155,6 +173,17 @@ export function useRoom(code: string, name: string) {
 
   const start = useCallback(() => send({ type: "start" }), [send]);
 
+  const react = useCallback(
+    (emoji: string) => {
+      try {
+        send({ type: "react", emoji });
+      } catch {
+        // Offline: a lost reaction does not matter.
+      }
+    },
+    [send],
+  );
+
   /** The server regenerates the object from the seed and scores the plane. */
   const cut = useCallback(
     (round: number, plane: Plane) =>
@@ -171,5 +200,5 @@ export function useRoom(code: string, name: string) {
     [send],
   );
 
-  return { state, error, fatal, connected, start, cut, playerId: identity().playerId };
+  return { state, error, fatal, connected, start, cut, react, reactions, playerId: identity().playerId };
 }

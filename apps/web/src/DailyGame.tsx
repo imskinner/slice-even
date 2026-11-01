@@ -8,6 +8,7 @@ import { appearanceFor, evaluateCut, KIND_EMOJI, KIND_LABELS, objectSpan, rateEr
 import { fetchDaily, recordStreak, submitDaily, type DailyResponse } from "./net/daily.ts";
 import { loadName } from "./Home.tsx";
 import { sfx } from "./audio/sfx.ts";
+import { recordCut, recordDailyStreak } from "./progress/stats.ts";
 
 const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
@@ -80,6 +81,7 @@ export function DailyGame({ onExit, onPractice }: { onExit(): void; onPractice()
       setSubmitting(true);
       submitDaily(loadName() || "Anônimo", plane).then(
         (res) => {
+          if (res.mine) recordCut({ kind: res.puzzle.kind, error: res.mine.score.error });
           setDaily(res);
           setSubmitting(false);
         },
@@ -135,6 +137,7 @@ function DailyResult({ daily, onPractice }: { daily: DailyResponse; onPractice()
   const mine = daily.mine!;
   const rating = rateError(mine.score.error);
   const [streak] = useState(() => recordStreak(daily.puzzle.date));
+  useEffect(() => recordDailyStreak(streak), [streak]);
   const [copied, setCopied] = useState(false);
   const next = useCountdownTo(daily.nextInMs);
 

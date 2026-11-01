@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
 import type { AnyGeneratedObject, Plane } from "@slice-even/core";
 import { splitGeometry, toBufferGeometry } from "./geometry.ts";
 import { Knife } from "./Knife.tsx";
@@ -22,6 +23,14 @@ interface SliceStageProps {
   revealIdeal?: boolean;
   /** Hide the object (not the knife) this many ms after mounting, until it is cut. */
   hideAfterMs?: number;
+  /** Other players' cuts on this same object (twin rounds), drawn as colored lines. */
+  otherCuts?: OtherCut[];
+}
+
+export interface OtherCut {
+  plane: Plane;
+  color: string;
+  name: string;
 }
 
 /** The object on the board, the knife, and after the cut the two halves. */
@@ -34,6 +43,7 @@ export function SliceStage({
   locked = false,
   revealIdeal = true,
   hideAfterMs,
+  otherCuts = [],
 }: SliceStageProps) {
   const [hidden, setHidden] = useState(false);
   useEffect(() => {
@@ -107,6 +117,9 @@ export function SliceStage({
           onLand={() => sfx.splat(object.kind)}
         />
       )}
+      {outcome &&
+        revealIdeal &&
+        otherCuts.map((c, i) => <CutMark key={i} cut={c} floor={box.min.y} reach={Math.max(box.max.x - box.min.x, box.max.z - box.min.z)} />)}
       {outcome && revealIdeal && <IdealPlane plane={outcome.ideal} height={box.max.y - box.min.y + 2} center={center} />}
       {!(locked && !outcome) && (
         <Knife top={box.max.y} bottom={box.min.y} center={center} lift={lift} active={!outcome} onCut={handleCut} />
@@ -208,5 +221,28 @@ function IdealPlane({ plane, height, center }: { plane: Plane; height: number; c
       <boxGeometry args={[16, 0.03, 0.12]} />
       <meshBasicMaterial color="#1e9e57" />
     </mesh>
+  );
+}
+
+/** Another player's cut: a line on the board in their color, with their name at one end. */
+function CutMark({ cut, floor, reach }: { cut: OtherCut; floor: number; reach: number }) {
+  const quaternion = useMemo(
+    () =>
+      new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(...cut.plane.normal).normalize()),
+    [cut.plane],
+  );
+  const length = reach + 6;
+  return (
+    <group position={[cut.plane.point[0], floor + 0.02, cut.plane.point[2]]} quaternion={quaternion}>
+      <mesh>
+        <boxGeometry args={[length, 0.03, 0.1]} />
+        <meshBasicMaterial color={cut.color} />
+      </mesh>
+      <Html position={[length / 2 + 0.5, 0, 0]} center zIndexRange={[4, 0]}>
+        <div className="cut-label" style={{ borderColor: cut.color }}>
+          {cut.name}
+        </div>
+      </Html>
+    </group>
   );
 }

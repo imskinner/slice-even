@@ -3,6 +3,7 @@ import { KIND_EMOJI, KIND_LABELS, rateError, type CutOutcome, type KindMode } fr
 import { Balance } from "./Balance.tsx";
 import { useEffect } from "react";
 import { sfx } from "../audio/sfx.ts";
+import { isTouchDevice } from "./TouchControls.tsx";
 
 const MODES: readonly KindMode[] = ["random", ...OBJECT_KINDS];
 const modeLabel = (mode: KindMode) => (mode === "random" ? "🎲 Aleatório" : `${KIND_EMOJI[mode]} ${KIND_LABELS[mode]}`);
@@ -15,13 +16,15 @@ interface HudProps {
   seed: string;
   mode: KindMode;
   outcome: CutOutcome | null;
+  /** This cut beat your previous best for this item. */
+  newBest?: boolean;
   onMode(mode: KindMode): void;
   onNext(): void;
   onRetry(): void;
   onHome(): void;
 }
 
-export function Hud({ kind, seed, mode, outcome, onMode, onNext, onRetry, onHome }: HudProps) {
+export function Hud({ kind, seed, mode, outcome, newBest = false, onMode, onNext, onRetry, onHome }: HudProps) {
   return (
     <div className="hud">
       <header className="hud-top">
@@ -47,7 +50,7 @@ export function Hud({ kind, seed, mode, outcome, onMode, onNext, onRetry, onHome
       </header>
 
       {!outcome && <ControlsHint />}
-      {outcome && <Result outcome={outcome} onNext={onNext} onRetry={onRetry} />}
+      {outcome && <Result outcome={outcome} newBest={newBest} onNext={onNext} onRetry={onRetry} />}
     </div>
   );
 }
@@ -63,6 +66,13 @@ export function ItemBadge({ kind, extra }: { kind: ObjectKind; extra?: string })
 }
 
 export function ControlsHint() {
+  if (isTouchDevice()) {
+    return (
+      <div className="hint">
+        <b>Arraste</b> para mirar · <b>⟲ ⟳</b> giram a faca · <b>dois dedos</b> giram a câmera
+      </div>
+    );
+  }
   return (
     <div className="hint">
       <b>Mouse</b> mira · <b>Roda</b> ou <b>Q/E</b> gira · <b>Setas</b> ajuste fino · <b>Shift</b> precisão ·{" "}
@@ -71,7 +81,17 @@ export function ControlsHint() {
   );
 }
 
-function Result({ outcome, onNext, onRetry }: { outcome: CutOutcome; onNext(): void; onRetry(): void }) {
+function Result({
+  outcome,
+  newBest,
+  onNext,
+  onRetry,
+}: {
+  outcome: CutOutcome;
+  newBest: boolean;
+  onNext(): void;
+  onRetry(): void;
+}) {
   const { score } = outcome;
   const rating = rateError(score.error);
   const smaller = Math.min(score.fractionFront, 1 - score.fractionFront);
@@ -89,6 +109,7 @@ function Result({ outcome, onNext, onRetry }: { outcome: CutOutcome; onNext(): v
   return (
     <div className="result panel">
       <div className={`rating ${missed || sliver ? "bad" : rating.tone}`}>{label}</div>
+      {newBest && <div className="new-best">🏅 Novo recorde!</div>}
       {!missed && (
         <>
           <Balance left={score.massBack} right={score.massFront} />

@@ -1,0 +1,156 @@
+/* Records screen, achievement toast and the "new record" badge. */
+
+/* Phones: keep the bottom hint and touch controls clear of the sound button.
+   (`body` outranks the base rules in styles.css, which loads after this file.) */
+@media (max-width: 520px) {
+  body .hud {
+    padding-bottom: 66px;
+  }
+
+  body .touch-controls {
+    bottom: 132px;
+  }
+}
+
+.new-best {
+  font-family: var(--display);
+  font-size: 18px;
+  color: var(--teal-deep);
+  animation: pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) 0.8s both;
+}
+
+.achievement-toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px 10px 12px;
+  z-index: 20;
+  animation: toast-drop 3.4s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+@keyframes toast-drop {
+  0% { opacity: 0; transform: translate(-50%, -120%); }
+  10% { opacity: 1; transform: translate(-50%, 0); }
+  88% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -120%); }
+}
+
+.achievement-emoji {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.achievement-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.achievement-title {
+  font-family: var(--display);
+  font-size: 18px;
+}
+
+.records {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  display: grid;
+  place-items: start center;
+  padding: 16px;
+}
+
+.records-card {
+  width: min(640px, 100%);
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: rise 0.4s ease-out both;
+}
+
+.records-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.records-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 15px;
+}
+
+.records-summary b {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 20px;
+}
+
+.kind-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.kind-cell {
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: 0 3px 0 var(--ink);
+  padding: 8px;
+  text-align: center;
+}
+
+.kind-cell.gold {
+  background: linear-gradient(160deg, #ffe58a, #ffc93c);
+}
+
+.kind-cell.locked {
+  opacity: 0.55;
+}
+
+.kind-emoji {
+  font-size: 30px;
+}
+
+.kind-name {
+  font-family: var(--display);
+  font-size: 15px;
+}
+
+.kind-best {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.achievement-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.achievement-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper);
+  padding: 8px 10px;
+  opacity: 0.55;
+}
+
+.achievement-list li.got {
+  opacity: 1;
+  background: #fff1c7;
+  box-shadow: 0 3px 0 var(--ink);
+}

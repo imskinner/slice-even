@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import type { ClientMessage, DailyResponse, ServerMessage } from "./protocol.ts";
+import { LIMITS, REACTIONS, type ClientMessage, type DailyResponse, type ServerMessage } from "./protocol.ts";
 import { dailyDate, dailyPuzzle, leaderboard, msUntilNextDaily, standingOf, submitDaily, type DailyData } from "./daily.ts";
 import {
   createRoomData,
@@ -22,6 +22,8 @@ export interface Env {
 
 interface Attachment {
   playerId: string | null;
+  /** For rate-limiting reactions; survives hibernation with the socket. */
+  lastReaction?: number;
 }
 
 /**
@@ -86,6 +88,15 @@ export class Room extends DurableObject<Env> {
         case "ping":
           this.send(ws, { type: "pong" });
           return;
+        case "react": {
+          const player = this.data.players.find((p) => p.id === attachment.playerId);
+          if (!player || !(REACTIONS as readonly string[]).includes(msg.emoji)) return;
+          if (now - (attachment.lastReaction ?? 0) < LIMITS.reactionGapMs) return;
+          ws.serializeAttachment({ ...attachment, lastReaction: now } satisfies Attachment);
+          const relay: ServerMessage = { type: "reaction", from: player.id, name: player.name, emoji: msg.emoji };
+          for (const other of this.ctx.getWebSockets()) this.send(other, relay);
+          return;
+        }
         case "join": {
           try {
             join(this.data, String(msg.playerId), String(msg.token), String(msg.name ?? ""), now);

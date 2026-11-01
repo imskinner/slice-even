@@ -13,6 +13,7 @@ import {
   type CutOutcome,
   type KindMode,
 } from "./game.ts";
+import { recordCut } from "./progress/stats.ts";
 
 interface Round {
   kind: ObjectKind;
@@ -50,7 +51,15 @@ export function PracticeGame({ onExit }: { onExit(): void }) {
     history.replaceState(null, "", url);
   }, [round, mode]);
 
-  const handleCut = useCallback((plane: Plane) => setOutcome(evaluateCut(object, plane)), [object]);
+  const [newBest, setNewBest] = useState(false);
+  const handleCut = useCallback(
+    (plane: Plane) => {
+      const result = evaluateCut(object, plane);
+      setOutcome(result);
+      setNewBest(recordCut({ kind: object.kind, error: result.score.error }).newBest);
+    },
+    [object],
+  );
 
   const startRound = (nextMode: KindMode) => {
     setOutcome(null);
@@ -82,6 +91,7 @@ export function PracticeGame({ onExit }: { onExit(): void }) {
         seed={round.seed}
         mode={mode}
         outcome={outcome}
+        newBest={newBest}
         onMode={changeMode}
         onNext={() => startRound(mode)}
         onRetry={retry}

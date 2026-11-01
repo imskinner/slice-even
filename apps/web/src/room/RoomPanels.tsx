@@ -12,13 +12,22 @@ const DEADLINE_SLACK_MS = 2000;
 const AVATAR_COLORS = ["#ffc93c", "#3fc5f0", "#36d96b", "#ff8a3d", "#ff3e7f", "#b28dff"];
 const AVATAR_FACES = ["🍎", "🍊", "🍌", "🥒", "🥕", "🍅", "🍞", "🎂"];
 
-/** Stable fruit avatar per player id. */
-export function Avatar({ id }: { id: string }) {
+function hashId(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/** Each player's color, shared by their avatar and their cut line. */
+export function avatarColor(id: string): string {
+  return AVATAR_COLORS[hashId(id) % AVATAR_COLORS.length]!;
+}
+
+/** Stable fruit avatar per player id. */
+export function Avatar({ id }: { id: string }) {
   return (
-    <span className="avatar" style={{ background: AVATAR_COLORS[h % AVATAR_COLORS.length] }}>
-      {AVATAR_FACES[(h >>> 8) % AVATAR_FACES.length]}
+    <span className="avatar" style={{ background: avatarColor(id) }}>
+      {AVATAR_FACES[(hashId(id) >>> 8) % AVATAR_FACES.length]}
     </span>
   );
 }

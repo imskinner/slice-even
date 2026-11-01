@@ -66,11 +66,14 @@ export type ClientMessage =
   | { type: "join"; playerId: string; token: string; name: string }
   | { type: "start" }
   | { type: "cut"; requestId: string; round: number; plane: unknown }
+  | { type: "react"; emoji: string }
   | { type: "ping" };
 
 export type ServerMessage =
   | { type: "state"; state: RoomState; you: string; serverTime: number }
   | { type: "cutResult"; requestId: string; score: CutResult }
+  /** Someone reacted; relayed to everyone, never stored. */
+  | { type: "reaction"; from: string; name: string; emoji: string }
   /** A failed action; the connection stays open. */
   | { type: "error"; requestId?: string; message: string }
   /** The connection cannot continue (room missing, full, already started). */
@@ -88,6 +91,9 @@ export interface DailyResponse {
   nextInMs: number;
 }
 
+/** The only reactions the server relays. */
+export const REACTIONS = ["🍅", "👏", "😂", "😱", "🔥", "🤏"] as const;
+
 export const LIMITS = {
   maxPlayers: 8,
   maxName: 24,
@@ -101,6 +107,8 @@ export const LIMITS = {
   betweenRoundsMs: 6000,
   /** Accept cuts that arrive this long after the deadline (network latency). */
   graceMs: 2000,
+  /** Minimum gap between two reactions from the same connection. */
+  reactionGapMs: 600,
   /** Rooms with no activity for this long are deleted. */
   idleMs: 12 * 60 * 60 * 1000,
 } as const;

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { generateObject, objectSeed, ruleTarget, type CutResult, type Plane } from "@slice-even/core";
 import { GameCanvas } from "../scene/GameCanvas.tsx";
 import { SliceStage } from "../scene/SliceStage.tsx";
 import { appearanceFor, BLIND_AFTER_MS, evaluateCut, objectSpan, type CutOutcome } from "../game.ts";
 import { ItemBadge } from "../ui/Hud.tsx";
 import { useRoom, type Round } from "../net/rooms.ts";
-import { Lobby, RoundResults, RoundStatus, RuleCard } from "./RoomPanels.tsx";
+import { avatarColor, Lobby, RoundResults, RoundStatus, RuleCard } from "./RoomPanels.tsx";
+import { ReactionBar, ReactionLayer } from "./Reactions.tsx";
+import { recordCut, recordGameWin, recordRoundWin } from "../progress/stats.ts";
 
 interface RoomGameProps {
   code: string;
@@ -14,7 +16,7 @@ interface RoomGameProps {
 }
 
 export function RoomGame({ code, name, onExit }: RoomGameProps) {
-  const { state, error, fatal, connected, start, cut, playerId: userId } = useRoom(code, name);
+  const { state, error, fatal, connected, start, cut, react, reactions, playerId: userId } = useRoom(code, name);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const run = useCallback((action: () => void) => {
@@ -25,6 +27,19 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
       setActionError((e as Error).message);
     }
   }, []);
+
+  // Personal progress: round and game wins, counted once each per visit.
+  const counted = useRef(new Set<string>());
+  const lastRound = state?.rounds.at(-1);
+  useEffect(() => {
+    if (!state || !lastRound || lastRound.status !== "scored" || counted.current.has(lastRound.id)) return;
+    counted.current.add(lastRound.id);
+    if (lastRound.winner_id === userId) recordRoundWin();
+    if (state.room.status === "finished") {
+      const champion = [...state.players].sort((a, b) => b.score - a.score || b.wins - a.wins)[0];
+      if (champion?.user_id === userId) recordGameWin();
+    }
+  }, [state, lastRound, userId]);
 
   // Put the code in the URL so a reload rejoins and the link can be shared.
   useEffect(() => {
@@ -59,7 +74,15 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
   return (
     <>
       {round ? (
-        <RoundStage key={round.id} round={round} userId={userId} cuts={cuts} cut={cut} onError={setActionError} />
+        <RoundStage
+          key={round.id}
+          round={round}
+          userId={userId}
+          players={players}
+          cuts={cuts}
+          cut={cut}
+          onError={setActionError}
+        />
       ) : (
         <GameCanvas />
       )}
@@ -99,6 +122,8 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
         {(actionError ?? error) && <div className="toast error">{actionError ?? error}</div>}
         {!connected && <div className="toast">Reconectando…</div>}
       </div>
+      <ReactionLayer reactions={reactions} userId={userId} />
+      <ReactionBar onReact={react} />
     </>
   );
 }
@@ -107,12 +132,14 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
 function RoundStage({
   round,
   userId,
+  players,
   cuts,
   cut,
   onError,
 }: {
   round: Round;
   userId: string;
+  players: { user_id: string; name: string }[];
   cuts: { round_id: string; user_id: string; plane: Plane }[];
   cut(round: number, plane: Plane): Promise<CutResult>;
   onError(message: string | null): void;
@@ -132,6 +159,21 @@ function RoundStage({
   );
 
   const timeUp = useDeadlinePassed(round);
+
+  // Same object for everyone: after the round, show where each player cut it.
+  const otherCuts = useMemo(
+    () =>
+      round.rule.type === "twin" && round.status === "scored"
+        ? cuts
+            .filter((c) => c.round_id === round.id && c.user_id !== userId)
+            .map((c) => ({
+              plane: c.plane,
+              color: avatarColor(c.user_id),
+              name: players.find((p) => p.user_id === c.user_id)?.name ?? "?",
+            }))
+        : [],
+    [round, cuts, players, userId],
+  );
   const playing = round.participants.includes(userId);
   // Blind rounds: the object vanishes a few seconds after the round starts.
   const [hideAfterMs] = useState(() =>
@@ -145,11 +187,11 @@ function RoundStage({
       setLocal(evaluateCut(object, plane, target));
       onError(null);
       cut(round.number, plane).then(
-        () => undefined,
+        (score) => recordCut({ kind: round.kind, error: score.error, rule: round.rule }),
         (e: Error) => onError(e.message),
       );
     },
-    [object, target, round.number, cut, onError],
+    [object, target, round.number, round.kind, round.rule, cut, onError],
   );
 
   return (
@@ -163,6 +205,7 @@ function RoundStage({
         locked={round.status === "scored" || timeUp || !playing}
         revealIdeal={round.status === "scored"}
         hideAfterMs={round.status === "cutting" ? hideAfterMs : undefined}
+        otherCuts={otherCuts}
       />
     </GameCanvas>
   );

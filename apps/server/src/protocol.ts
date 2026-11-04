@@ -7,6 +7,10 @@ import type { CutResult, ObjectKind, Plane, RoundRule } from "@slice-even/core";
 
 export interface Room {
   code: string;
+  /** Quick-play table: starts by itself and fills empty seats with bots. */
+  public: boolean;
+  /** When a public table starts on its own. */
+  auto_start_at: string | null;
   host_id: string;
   status: "lobby" | "playing" | "finished";
   total_rounds: number;
@@ -23,6 +27,8 @@ export interface Player {
   last_cut_round: number;
   joined_at: string;
   online: boolean;
+  /** Computer player. */
+  bot: boolean;
 }
 
 export interface Round {
@@ -67,6 +73,10 @@ export type ClientMessage =
   | { type: "start" }
   | { type: "cut"; requestId: string; round: number; plane: unknown }
   | { type: "react"; emoji: string }
+  | { type: "addBot"; level: "easy" | "medium" | "hard" }
+  | { type: "removeBot"; playerId: string }
+  /** Where your knife is while aiming; relayed to the others as a ghost. */
+  | { type: "aim"; x: number; z: number; angle: number }
   | { type: "ping" };
 
 export type ServerMessage =
@@ -74,6 +84,8 @@ export type ServerMessage =
   | { type: "cutResult"; requestId: string; score: CutResult }
   /** Someone reacted; relayed to everyone, never stored. */
   | { type: "reaction"; from: string; name: string; emoji: string }
+  /** Another player's knife position while aiming (not stored). */
+  | { type: "aim"; from: string; x: number; z: number; angle: number }
   /** A failed action; the connection stays open. */
   | { type: "error"; requestId?: string; message: string }
   /** The connection cannot continue (room missing, full, already started). */
@@ -109,6 +121,8 @@ export const LIMITS = {
   graceMs: 2000,
   /** Minimum gap between two reactions from the same connection. */
   reactionGapMs: 600,
+  /** Minimum gap between two aim updates relayed from one connection (~12 per second). */
+  aimGapMs: 80,
   /** Rooms with no activity for this long are deleted. */
   idleMs: 12 * 60 * 60 * 1000,
 } as const;

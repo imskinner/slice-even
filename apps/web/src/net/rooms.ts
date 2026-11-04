@@ -60,10 +60,35 @@ export async function createRoom(totalRounds: number): Promise<string> {
  */
 function toLocalClock(state: RoomState, offsetMs: number): RoomState {
   const shift = (iso: string) => new Date(new Date(iso).getTime() - offsetMs).toISOString();
+  const shiftOrNull = (iso: string | null) => (iso ? shift(iso) : null);
   return {
     ...state,
-    rounds: state.rounds.map((r) => ({ ...r, started_at: shift(r.started_at), deadline: shift(r.deadline) })),
+    room: { ...state.room, auto_start_at: shiftOrNull(state.room.auto_start_at) },
+    rounds: state.rounds.map((r) => ({
+      ...r,
+      started_at: shift(r.started_at),
+      deadline: shift(r.deadline),
+      next_start_at: shiftOrNull(r.next_start_at),
+    })),
   };
+}
+
+/** Joins the open public table (or a fresh one) and returns its code. */
+export async function quickPlay(): Promise<string> {
+  if (!SERVER) throw new Error("Servidor multiplayer não configurado.");
+  const res = await fetch(`${SERVER}/api/quickplay`, { method: "POST" }).catch(() => null);
+  if (!res) throw new Error("Não foi possível falar com o servidor.");
+  const body = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
+  if (!res.ok || !body.code) throw new Error(body.error ?? "Não foi possível achar uma mesa.");
+  return body.code;
+}
+
+/** Another player's knife while they aim; read every frame, never rendered through React state. */
+export interface Ghost {
+  x: number;
+  z: number;
+  angle: number;
+  at: number;
 }
 
 export interface Reaction {
@@ -90,6 +115,7 @@ export function useRoom(code: string, name: string) {
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const socket = useRef<WebSocket | null>(null);
   const pending = useRef(new Map<string, PendingCut>());
+  const ghosts = useRef(new Map<string, Ghost>());
 
   useEffect(() => {
     if (!SERVER) {
@@ -138,6 +164,9 @@ export function useRoom(code: string, name: string) {
             setTimeout(() => setReactions((list) => list.filter((r) => r.id !== reaction.id)), REACTION_MS);
             break;
           }
+          case "aim":
+            ghosts.current.set(msg.from, { x: msg.x, z: msg.z, angle: msg.angle, at: performance.now() });
+            break;
           case "fatal":
             stopped = true;
             setFatal(msg.message);
@@ -172,6 +201,20 @@ export function useRoom(code: string, name: string) {
   }, []);
 
   const start = useCallback(() => send({ type: "start" }), [send]);
+  const addBot = useCallback((level: "easy" | "medium" | "hard") => send({ type: "addBot", level }), [send]);
+  const removeBot = useCallback((playerId: string) => send({ type: "removeBot", playerId }), [send]);
+
+  /** Your knife position for the others' ghost knives; callers throttle it. */
+  const sendAim = useCallback(
+    (x: number, z: number, angle: number) => {
+      try {
+        send({ type: "aim", x, z, angle });
+      } catch {
+        // A dropped aim update does not matter.
+      }
+    },
+    [send],
+  );
 
   const react = useCallback(
     (emoji: string) => {
@@ -200,5 +243,19 @@ export function useRoom(code: string, name: string) {
     [send],
   );
 
-  return { state, error, fatal, connected, start, cut, react, reactions, playerId: identity().playerId };
+  return {
+    state,
+    error,
+    fatal,
+    connected,
+    start,
+    cut,
+    react,
+    reactions,
+    addBot,
+    removeBot,
+    sendAim,
+    ghosts,
+    playerId: identity().playerId,
+  };
 }

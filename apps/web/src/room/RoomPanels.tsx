@@ -3,6 +3,7 @@ import type { Cut, Player, Room, Round } from "../net/rooms.ts";
 import { rateError, ruleInfo } from "../game.ts";
 import { Balance } from "../ui/Balance.tsx";
 import { sfx } from "../audio/sfx.ts";
+import "./room.css";
 
 const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
@@ -32,17 +33,30 @@ export function Avatar({ id }: { id: string }) {
   );
 }
 
+type BotLevel = "easy" | "medium" | "hard";
+const BOT_BUTTONS: [BotLevel, string][] = [
+  ["easy", "Fácil"],
+  ["medium", "Médio"],
+  ["hard", "Difícil"],
+];
+
 export function Lobby({
   room,
   players,
   userId,
   onStart,
+  onAddBot,
+  onRemoveBot,
 }: {
   room: Room;
   players: Player[];
   userId: string;
   onStart(): void;
+  onAddBot(level: BotLevel): void;
+  onRemoveBot(playerId: string): void;
 }) {
+  const isHost = room.host_id === userId;
+  const startsIn = useCountdown(room.auto_start_at ? new Date(room.auto_start_at).getTime() : 0);
   const [copied, setCopied] = useState(false);
   // Pop when someone new arrives.
   const [seen, setSeen] = useState(players.length);
@@ -57,6 +71,11 @@ export function Lobby({
 
   return (
     <div className="result panel lobby">
+      {room.public && (
+        <div className="rule-chip">
+          ⚡ <b>Mesa pública</b> · começa em {startsIn}s · lugares vazios viram bots
+        </div>
+      )}
       <div className="lobby-label">Código da sala</div>
       <div className="room-code">{room.code}</div>
       <button className="btn btn-small btn-blue" onClick={copy}>
@@ -69,19 +88,34 @@ export function Lobby({
             {p.user_id === room.host_id ? "👑 " : ""}
             {p.name}
             {p.user_id === userId ? " (você)" : ""}
+            {p.bot && isHost && (
+              <button className="chip-x" aria-label={`Tirar ${p.name}`} onClick={() => onRemoveBot(p.user_id)}>
+                ✕
+              </button>
+            )}
           </li>
         ))}
       </ul>
+      {isHost && players.length < 8 && (
+        <div className="bot-row">
+          <span className="muted">Chamar bot:</span>
+          {BOT_BUTTONS.map(([level, label]) => (
+            <button key={level} className="chip" onClick={() => onAddBot(level)}>
+              🤖 {label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="stats">
         {room.total_rounds} rodadas · <b>a rodada N vale N pontos</b> · cada rodada tem uma regra surpresa
       </div>
       <div className="actions">
-        {room.host_id === userId ? (
+        {isHost ? (
           <button className="btn btn-yellow" onClick={onStart}>
-            Começar partida!
+            {room.public ? "Começar agora!" : "Começar partida!"}
           </button>
         ) : (
-          <span className="stats">Aguardando o anfitrião começar…</span>
+          <span className="stats">{room.public ? `Começa em ${startsIn}s…` : "Aguardando o anfitrião começar…"}</span>
         )}
       </div>
     </div>
@@ -284,7 +318,9 @@ function Scoreboard({ players, round, userId }: { players: Player[]; round: Roun
             <td className="name">
               <Avatar id={p.user_id} /> {p.name}
             </td>
-            <td className="total">{p.score} pts</td>
+            <td className="total">
+              {p.score} {p.score === 1 ? "pt" : "pts"}
+            </td>
             <td className="muted">{round.points[p.user_id] ? `+${round.points[p.user_id]} agora` : ""}</td>
           </tr>
         ))}

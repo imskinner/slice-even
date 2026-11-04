@@ -14,16 +14,21 @@ import {
   submitCut,
   type RoomData,
 } from "./room.ts";
+import { addBot, fillPublicTable, planBotCuts, removeBot, runDueBots, type BotLevel } from "./bots.ts";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
   DAILY: DurableObjectNamespace<Daily>;
+  MATCHMAKER: DurableObjectNamespace<Matchmaker>;
 }
+
+const newSeed = () => crypto.randomUUID().replaceAll("-", "");
 
 interface Attachment {
   playerId: string | null;
-  /** For rate-limiting reactions; survives hibernation with the socket. */
+  /** For rate-limiting reactions and aim updates; survives hibernation with the socket. */
   lastReaction?: number;
+  lastAim?: number;
 }
 
 /**
@@ -48,14 +53,22 @@ export class Room extends DurableObject<Env> {
 
     if (url.pathname === "/init" && request.method === "POST") {
       if (this.data) return new Response("taken", { status: 409 });
-      const { code, totalRounds } = (await request.json()) as { code: string; totalRounds: number };
+      const body = (await request.json()) as { code: string; totalRounds: number; public?: boolean };
       try {
-        this.data = createRoomData(code, totalRounds, Date.now());
+        this.data = createRoomData(body.code, body.totalRounds, Date.now(), body.public === true);
       } catch (e) {
         return new Response((e as Error).message, { status: 400 });
       }
       await this.save();
       return new Response("created", { status: 201 });
+    }
+
+    // The matchmaker asks whether this public table can still take people.
+    if (url.pathname === "/info") {
+      const d = this.data;
+      return Response.json({
+        open: !!d && d.status === "lobby" && d.players.length < 6 && (!d.autoStartAt || d.autoStartAt - Date.now() > 3000),
+      });
     }
 
     if (request.headers.get("Upgrade") === "websocket") {
@@ -97,6 +110,26 @@ export class Room extends DurableObject<Env> {
           for (const other of this.ctx.getWebSockets()) this.send(other, relay);
           return;
         }
+        case "aim": {
+          // Ghost knives: relay to everyone else, a dozen times a second at most.
+          if (!attachment.playerId || now - (attachment.lastAim ?? 0) < LIMITS.aimGapMs) return;
+          const [x, z, angle] = [Number(msg.x), Number(msg.z), Number(msg.angle)];
+          if (![x, z, angle].every(Number.isFinite) || Math.abs(x) > 30 || Math.abs(z) > 30) return;
+          ws.serializeAttachment({ ...attachment, lastAim: now } satisfies Attachment);
+          const relay: ServerMessage = { type: "aim", from: attachment.playerId, x, z, angle };
+          for (const other of this.ctx.getWebSockets()) if (other !== ws) this.send(other, relay);
+          return;
+        }
+        case "addBot": {
+          if (!attachment.playerId) return;
+          addBot(this.data, attachment.playerId, msg.level as BotLevel, now, Math.random);
+          break;
+        }
+        case "removeBot": {
+          if (!attachment.playerId) return;
+          removeBot(this.data, attachment.playerId, String(msg.playerId));
+          break;
+        }
         case "join": {
           try {
             join(this.data, String(msg.playerId), String(msg.token), String(msg.name ?? ""), now);
@@ -111,7 +144,8 @@ export class Room extends DurableObject<Env> {
         }
         case "start": {
           if (!attachment.playerId) return;
-          startRound(this.data, attachment.playerId, now, crypto.randomUUID().replaceAll("-", ""), Math.random);
+          const round = startRound(this.data, attachment.playerId, now, newSeed(), Math.random);
+          planBotCuts(this.data, round, Math.random);
           break;
         }
         case "cut": {
@@ -166,11 +200,15 @@ export class Room extends DurableObject<Env> {
       this.data = null;
       return;
     }
+    runDueBots(this.data, now, Math.random);
     finalizeRound(this.data, now);
-    // After the reveal, the next round starts on its own.
     const round = currentRound(this.data);
-    if (round?.status === "scored" && round.nextStartAt && now >= round.nextStartAt) {
-      startRound(this.data, null, now, crypto.randomUUID().replaceAll("-", ""), Math.random);
+    const publicStart = this.data.status === "lobby" && this.data.autoStartAt !== null && now >= this.data.autoStartAt;
+    const nextRound = round?.status === "scored" && round.nextStartAt !== null && now >= round.nextStartAt;
+    if (publicStart || nextRound) {
+      // Public tables top up with bots so nobody plays alone.
+      if (publicStart) fillPublicTable(this.data, now, Math.random);
+      planBotCuts(this.data, startRound(this.data, null, now, newSeed(), Math.random), Math.random);
     }
     await this.save();
     this.broadcast();
@@ -260,4 +298,39 @@ export class Daily extends DurableObject<Env> {
     }
     return new Response("method not allowed", { status: 405 });
   }
+}
+
+/**
+ * Single instance that hands out the current public table for "Quick play":
+ * the same room while it still has room and time, a new one otherwise.
+ */
+export class Matchmaker extends DurableObject<Env> {
+  async fetch(): Promise<Response> {
+    const current = await this.ctx.storage.get<string>("code");
+    if (current) {
+      const info = await this.env.ROOMS.get(this.env.ROOMS.idFromName(current)).fetch("https://room/info");
+      const { open } = (await info.json()) as { open: boolean };
+      if (open) return Response.json({ code: current });
+    }
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const code = randomRoomCode();
+      const res = await this.env.ROOMS.get(this.env.ROOMS.idFromName(code)).fetch("https://room/init", {
+        method: "POST",
+        body: JSON.stringify({ code, totalRounds: 5, public: true }),
+      });
+      if (res.status === 201) {
+        await this.ctx.storage.put("code", code);
+        return Response.json({ code });
+      }
+    }
+    return Response.json({ error: "Não foi possível abrir uma mesa." }, { status: 503 });
+  }
+}
+
+// No 0/O, 1/I/L: codes are read aloud.
+const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+export function randomRoomCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(5));
+  return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join("");
 }

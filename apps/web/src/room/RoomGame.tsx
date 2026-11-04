@@ -4,7 +4,7 @@ import { GameCanvas } from "../scene/GameCanvas.tsx";
 import { SliceStage } from "../scene/SliceStage.tsx";
 import { appearanceFor, BLIND_AFTER_MS, evaluateCut, objectSpan, type CutOutcome } from "../game.ts";
 import { ItemBadge } from "../ui/Hud.tsx";
-import { useRoom, type Round } from "../net/rooms.ts";
+import { useRoom, type Ghost, type Round } from "../net/rooms.ts";
 import { avatarColor, Lobby, RoundResults, RoundStatus, RuleCard } from "./RoomPanels.tsx";
 import { ReactionBar, ReactionLayer } from "./Reactions.tsx";
 import { recordCut, recordGameWin, recordRoundWin } from "../progress/stats.ts";
@@ -16,7 +16,21 @@ interface RoomGameProps {
 }
 
 export function RoomGame({ code, name, onExit }: RoomGameProps) {
-  const { state, error, fatal, connected, start, cut, react, reactions, playerId: userId } = useRoom(code, name);
+  const {
+    state,
+    error,
+    fatal,
+    connected,
+    start,
+    cut,
+    react,
+    reactions,
+    addBot,
+    removeBot,
+    sendAim,
+    ghosts,
+    playerId: userId,
+  } = useRoom(code, name);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const run = useCallback((action: () => void) => {
@@ -81,6 +95,8 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
           players={players}
           cuts={cuts}
           cut={cut}
+          sendAim={sendAim}
+          ghosts={ghosts}
           onError={setActionError}
         />
       ) : (
@@ -98,7 +114,14 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
         </header>
 
         {room.status === "lobby" && (
-          <Lobby room={room} players={players} userId={userId} onStart={() => run(start)} />
+          <Lobby
+            room={room}
+            players={players}
+            userId={userId}
+            onStart={() => run(start)}
+            onAddBot={(level) => run(() => addBot(level))}
+            onRemoveBot={(id) => run(() => removeBot(id))}
+          />
         )}
         {room.status !== "lobby" && round?.status === "cutting" && (
           <>
@@ -135,13 +158,17 @@ function RoundStage({
   players,
   cuts,
   cut,
+  sendAim,
+  ghosts,
   onError,
 }: {
   round: Round;
   userId: string;
-  players: { user_id: string; name: string }[];
+  players: { user_id: string; name: string; bot: boolean; last_cut_round: number }[];
   cuts: { round_id: string; user_id: string; plane: Plane }[];
   cut(round: number, plane: Plane): Promise<CutResult>;
+  sendAim(x: number, z: number, angle: number): void;
+  ghosts: React.RefObject<Map<string, Ghost>>;
   onError(message: string | null): void;
 }) {
   const seed = objectSeed(round.seed, userId, round.rule);
@@ -159,6 +186,26 @@ function RoundStage({
   );
 
   const timeUp = useDeadlinePassed(round);
+
+  // Live ghost knives: send our aim ~10 times a second, show the others still aiming.
+  const lastSent = useRef(0);
+  const aim = useCallback(
+    (x: number, z: number, angle: number) => {
+      const now = performance.now();
+      if (now - lastSent.current < 100) return;
+      lastSent.current = now;
+      sendAim(x, z, angle);
+    },
+    [sendAim],
+  );
+  const ghostPlayers = useMemo(
+    () =>
+      players
+        .filter((p) => p.user_id !== userId && !p.bot && round.participants.includes(p.user_id))
+        .filter((p) => p.last_cut_round < round.number)
+        .map((p) => ({ id: p.user_id, name: p.name, color: avatarColor(p.user_id) })),
+    [players, userId, round],
+  );
 
   // Same object for everyone: after the round, show where each player cut it.
   const otherCuts = useMemo(
@@ -206,6 +253,8 @@ function RoundStage({
         revealIdeal={round.status === "scored"}
         hideAfterMs={round.status === "cutting" ? hideAfterMs : undefined}
         otherCuts={otherCuts}
+        onAim={round.status === "cutting" ? aim : undefined}
+        ghosts={round.status === "cutting" ? { positions: ghosts, players: ghostPlayers } : undefined}
       />
     </GameCanvas>
   );

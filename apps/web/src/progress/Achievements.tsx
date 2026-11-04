@@ -3,6 +3,7 @@ import { OBJECT_KINDS } from "@slice-even/core";
 import { ACHIEVEMENT_EVENT, ACHIEVEMENTS, GOLDEN_ERROR, goldenKinds, loadStats, type Achievement } from "./stats.ts";
 import { KIND_EMOJI, KIND_LABELS } from "../game.ts";
 import { sfx } from "../audio/sfx.ts";
+import { isUnlocked, selectedSkin, selectSkin, SKINS, unlockHint } from "./skins.ts";
 import "./progress.css";
 
 const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
@@ -44,6 +45,7 @@ export function AchievementToast() {
 /** Personal records per item, the golden collection and achievements. */
 export function RecordsScreen({ onExit }: { onExit(): void }) {
   const [stats] = useState(loadStats);
+  const [knife, setKnife] = useState(() => selectedSkin().id);
   const golden = goldenKinds(stats);
 
   return (
@@ -85,6 +87,28 @@ export function RecordsScreen({ onExit }: { onExit(): void }) {
                 <div className="kind-name">{KIND_LABELS[kind]}</div>
                 <div className="kind-best">{best === undefined ? "—" : pct(best)}</div>
               </div>
+            );
+          })}
+        </div>
+
+        <div className="lobby-label">Facas · desbloqueie com conquistas</div>
+        <div className="kind-grid">
+          {SKINS.map((skin) => {
+            const open = isUnlocked(skin, stats);
+            return (
+              <button
+                key={skin.id}
+                className={`kind-cell skin-cell${skin.id === knife ? " gold" : ""}${open ? "" : " locked"}`}
+                disabled={!open}
+                onClick={() => {
+                  selectSkin(skin.id);
+                  setKnife(skin.id);
+                }}
+              >
+                <div className="kind-emoji">{open ? skin.emoji : "🔒"}</div>
+                <div className="kind-name">{skin.name}</div>
+                <div className="muted">{skin.id === knife ? "Em uso" : open ? "Usar" : unlockHint(skin)}</div>
+              </button>
             );
           })}
         </div>

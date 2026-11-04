@@ -115,6 +115,16 @@
   opacity: 0.55;
 }
 
+.skin-cell {
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.skin-cell:disabled {
+  cursor: default;
+}
+
 .kind-emoji {
   font-size: 30px;
 }

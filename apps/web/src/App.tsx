@@ -3,7 +3,7 @@ import { Home, loadName } from "./Home.tsx";
 import { PracticeGame } from "./PracticeGame.tsx";
 import { DailyGame } from "./DailyGame.tsx";
 import { RoomGame } from "./room/RoomGame.tsx";
-import { createRoom, multiplayerConfigured } from "./net/rooms.ts";
+import { createRoom, multiplayerConfigured, quickPlay } from "./net/rooms.ts";
 import { sfx, unlockOnGesture } from "./audio/sfx.ts";
 import { SoundToggle } from "./ui/SoundToggle.tsx";
 import { AchievementToast, RecordsScreen } from "./progress/Achievements.tsx";
@@ -44,6 +44,18 @@ export function App() {
   const enterRoom = (code: string, name: string) => {
     setError(null);
     setScreen({ type: "room", code: code.trim().toUpperCase(), name });
+  };
+
+  const joinPublic = async (name: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      enterRoom(await quickPlay(), name);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const create = async (name: string, rounds: number) => {
@@ -99,6 +111,7 @@ export function App() {
           onPractice={() => setScreen({ type: "practice" })}
           onDaily={() => setScreen({ type: "daily" })}
           onRecords={() => setScreen({ type: "records" })}
+          onQuickPlay={joinPublic}
         />
       );
       break;

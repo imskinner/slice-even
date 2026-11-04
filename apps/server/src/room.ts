@@ -31,6 +31,8 @@ export interface PlayerRecord {
   score: number;
   lastCutRound: number;
   joinedAt: number;
+  /** Present for computer players (see bots.ts). */
+  bot?: { level: "easy" | "medium" | "hard" };
 }
 
 export interface RoundRecord {
@@ -46,6 +48,8 @@ export interface RoundRecord {
   participants: string[];
   points: Record<string, number>;
   nextStartAt: number | null;
+  /** When each bot in this round will cut (bots.ts fills it in). */
+  botPlans: { playerId: string; at: number }[];
 }
 
 export interface CutRecord {
@@ -68,12 +72,19 @@ export interface RoomData {
   rounds: RoundRecord[];
   cuts: CutRecord[];
   lastActivity: number;
+  /** Quick-play table: starts on its own and fills empty seats with bots. */
+  public: boolean;
+  /** Public tables start at this time (set when the first person arrives). */
+  autoStartAt: number | null;
 }
 
 /** A rule was broken; the message is shown to the player as is. */
 export class RoomError extends Error {}
 
-export function createRoomData(code: string, totalRounds: number, now: number): RoomData {
+/** Public tables wait this long after the first person arrives, so friends can join. */
+export const PUBLIC_COUNTDOWN_MS = 15_000;
+
+export function createRoomData(code: string, totalRounds: number, now: number, isPublic = false): RoomData {
   const rounds = Math.round(totalRounds);
   if (!(rounds >= LIMITS.minRounds && rounds <= LIMITS.maxRounds)) throw new RoomError("Número de rodadas inválido.");
   return {
@@ -86,6 +97,8 @@ export function createRoomData(code: string, totalRounds: number, now: number): 
     rounds: [],
     cuts: [],
     lastActivity: now,
+    public: isPublic,
+    autoStartAt: null,
   };
 }
 
@@ -116,6 +129,7 @@ export function join(data: RoomData, playerId: string, token: string, rawName: s
   const player: PlayerRecord = { id: playerId, token, name, wins: 0, score: 0, lastCutRound: 0, joinedAt: now };
   data.players.push(player);
   data.hostId ??= playerId;
+  if (data.public && data.status === "lobby") data.autoStartAt ??= now + PUBLIC_COUNTDOWN_MS;
   data.lastActivity = now;
   return player;
 }
@@ -157,9 +171,9 @@ export function startRound(
 ): RoundRecord {
   const previous = currentRound(data);
   if (playerId !== null && data.hostId !== playerId) throw new RoomError("Só quem criou a sala pode começar.");
-  if (playerId === null && (!previous?.nextStartAt || now < previous.nextStartAt)) {
-    throw new RoomError("Ainda não é hora da próxima rodada.");
-  }
+  const autoTime =
+    data.status === "lobby" ? data.autoStartAt !== null && now >= data.autoStartAt : !!previous?.nextStartAt && now >= previous.nextStartAt;
+  if (playerId === null && !autoTime) throw new RoomError("Ainda não é hora da próxima rodada.");
   if (data.status === "finished" || data.rounds.length >= data.totalRounds) throw new RoomError("A partida acabou.");
   if (previous?.status === "cutting") throw new RoomError("A rodada atual ainda não terminou.");
   if (data.players.length === 0) throw new RoomError("Não há jogadores na sala.");
@@ -180,9 +194,11 @@ export function startRound(
     participants: data.players.map((p) => p.id),
     points: {},
     nextStartAt: null,
+    botPlans: [],
   };
   data.rounds.push(round);
   data.status = "playing";
+  data.autoStartAt = null;
   data.lastActivity = now;
   return round;
 }
@@ -268,7 +284,12 @@ export function finalizeRound(data: RoomData, now: number): boolean {
 export function nextAlarm(data: RoomData): number {
   const round = currentRound(data);
   const cleanup = data.lastActivity + LIMITS.idleMs;
-  if (round?.status === "cutting") return Math.min(round.deadline, cleanup);
+  if (round?.status === "cutting") {
+    // `?? []`: rooms saved before bots existed have no plans.
+    const nextBot = Math.min(...(round.botPlans ?? []).map((p) => p.at));
+    return Math.min(round.deadline, cleanup, nextBot);
+  }
+  if (data.status === "lobby" && data.autoStartAt) return Math.min(data.autoStartAt, cleanup);
   if (round?.nextStartAt) return Math.min(round.nextStartAt, cleanup);
   return cleanup;
 }
@@ -286,6 +307,8 @@ export function publicView(data: RoomData, viewerId: string, online: ReadonlySet
     room: {
       code: data.code,
       host_id: data.hostId ?? "",
+      public: data.public,
+      auto_start_at: data.autoStartAt ? iso(data.autoStartAt) : null,
       status: data.status,
       total_rounds: data.totalRounds,
       round_seconds: data.roundSeconds,
@@ -298,7 +321,8 @@ export function publicView(data: RoomData, viewerId: string, online: ReadonlySet
       score: p.score,
       last_cut_round: p.lastCutRound,
       joined_at: iso(p.joinedAt),
-      online: online.has(p.id),
+      online: p.bot !== undefined || online.has(p.id),
+      bot: p.bot !== undefined,
     })),
     rounds: data.rounds.map((r) => ({
       id: roundId(r.number),

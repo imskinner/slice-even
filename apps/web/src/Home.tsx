@@ -29,6 +29,7 @@ interface HomeProps {
   onPractice(): void;
   onDaily(): void;
   onRecords(): void;
+  onQuickPlay(name: string): void;
 }
 
 export function Logo() {
@@ -51,7 +52,7 @@ export function Logo() {
   );
 }
 
-export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice, onDaily, onRecords }: HomeProps) {
+export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice, onDaily, onRecords, onQuickPlay }: HomeProps) {
   const [name, setName] = useState(loadName);
   const [code, setCode] = useState(initialCode);
   const [rounds, setRounds] = useState(5);
@@ -106,6 +107,17 @@ export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice, o
                     Criar sala
                   </button>
                 </form>
+
+                <button
+                  className="btn btn-mint"
+                  disabled={busy || !trimmed}
+                  onClick={() => {
+                    saveName(trimmed);
+                    onQuickPlay(trimmed);
+                  }}
+                >
+                  ⚡ Jogar rápido com quem estiver online
+                </button>
 
                 <div className="divider">ou entre numa sala</div>
 

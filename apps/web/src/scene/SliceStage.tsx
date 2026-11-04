@@ -10,6 +10,7 @@ import { Decoration } from "./Decoration.tsx";
 import { Splash } from "./Splash.tsx";
 import { sfx } from "../audio/sfx.ts";
 import type { CutOutcome } from "../game.ts";
+import type { Ghost } from "../net/rooms.ts";
 
 interface SliceStageProps {
   object: AnyGeneratedObject;
@@ -25,6 +26,16 @@ interface SliceStageProps {
   hideAfterMs?: number;
   /** Other players' cuts on this same object (twin rounds), drawn as colored lines. */
   otherCuts?: OtherCut[];
+  /** Forwarded to the knife: your aim, for the others' ghost knives. */
+  onAim?(x: number, z: number, angle: number): void;
+  /** Other players still aiming: live positions by id, plus how to label them. */
+  ghosts?: { positions: React.RefObject<Map<string, Ghost>>; players: GhostPlayer[] };
+}
+
+export interface GhostPlayer {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export interface OtherCut {
@@ -44,6 +55,8 @@ export function SliceStage({
   revealIdeal = true,
   hideAfterMs,
   otherCuts = [],
+  onAim,
+  ghosts,
 }: SliceStageProps) {
   const [hidden, setHidden] = useState(false);
   useEffect(() => {
@@ -117,12 +130,15 @@ export function SliceStage({
           onLand={() => sfx.splat(object.kind)}
         />
       )}
+      {ghosts?.players.map((p) => (
+        <GhostKnife key={p.id} player={p} positions={ghosts.positions} hover={box.max.y + 1.5} />
+      ))}
       {outcome &&
         revealIdeal &&
         otherCuts.map((c, i) => <CutMark key={i} cut={c} floor={box.min.y} reach={Math.max(box.max.x - box.min.x, box.max.z - box.min.z)} />)}
       {outcome && revealIdeal && <IdealPlane plane={outcome.ideal} height={box.max.y - box.min.y + 2} center={center} />}
       {!(locked && !outcome) && (
-        <Knife top={box.max.y} bottom={box.min.y} center={center} lift={lift} active={!outcome} onCut={handleCut} />
+        <Knife top={box.max.y} bottom={box.min.y} center={center} lift={lift} active={!outcome} onCut={handleCut} onAim={onAim} />
       )}
     </group>
   );
@@ -241,6 +257,47 @@ function CutMark({ cut, floor, reach }: { cut: OtherCut; floor: number; reach: n
       <Html position={[length / 2 + 0.5, 0, 0]} center zIndexRange={[4, 0]}>
         <div className="cut-label" style={{ borderColor: cut.color }}>
           {cut.name}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+/** Updates older than this hide the ghost (the player stopped aiming or left). */
+const GHOST_STALE_MS = 1500;
+
+/**
+ * Another player's knife, see-through and in their color, following the aim
+ * they broadcast. Smoothed, since updates arrive about ten times a second.
+ */
+function GhostKnife({
+  player,
+  positions,
+  hover,
+}: {
+  player: GhostPlayer;
+  positions: React.RefObject<Map<string, Ghost>>;
+  hover: number;
+}) {
+  const group = useRef<THREE.Group>(null!);
+  useFrame(() => {
+    const g = positions.current?.get(player.id);
+    const live = !!g && performance.now() - g.at < GHOST_STALE_MS;
+    group.current.visible = live;
+    if (!g || !live) return;
+    group.current.position.x += (g.x - group.current.position.x) * 0.3;
+    group.current.position.z += (g.z - group.current.position.z) * 0.3;
+    group.current.rotation.y += (-g.angle - group.current.rotation.y) * 0.3;
+  });
+  return (
+    <group ref={group} visible={false}>
+      <mesh position={[0, hover + 1.75, 0]}>
+        <boxGeometry args={[0.08, 3.5, 16]} />
+        <meshBasicMaterial color={player.color} transparent opacity={0.35} depthWrite={false} />
+      </mesh>
+      <Html position={[0, hover + 4.2, 0]} center zIndexRange={[4, 0]}>
+        <div className="cut-label" style={{ borderColor: player.color }}>
+          {player.name}
         </div>
       </Html>
     </group>

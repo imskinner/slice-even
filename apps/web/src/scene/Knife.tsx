@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { Plane } from "@slice-even/core";
 import { sfx } from "../audio/sfx.ts";
+import { selectedSkin } from "../progress/skins.ts";
 
 interface KnifeProps {
   /** Apple extents in the parent group's local space. */
@@ -14,6 +15,8 @@ interface KnifeProps {
   /** False once the cut has happened. */
   active: boolean;
   onCut(plane: Plane): void;
+  /** Called with the knife position whenever it moves while aiming (multiplayer ghosts). */
+  onAim?(x: number, z: number, angle: number): void;
 }
 
 const BLADE_LENGTH = 16;
@@ -42,7 +45,11 @@ export const KNIFE_STATE = "knife:state";
  * the cut) and the TouchControls buttons turn it and cut.
  * Coordinates are the parent group's (the apple's) local space.
  */
-export function Knife({ top, bottom, center, lift, active, onCut }: KnifeProps) {
+export function Knife({ top, bottom, center, lift, active, onCut, onAim }: KnifeProps) {
+  const lastAim = useRef({ x: NaN, z: NaN, angle: NaN });
+  // The chosen cosmetic knife (Records screen); read once per round.
+  const [skin] = useState(selectedSkin);
+  const bladeHeight = BLADE_HEIGHT * skin.height;
   const rig = useRef<THREE.Group>(null!);
   const blade = useRef<THREE.Group>(null!);
   const guide = useRef<THREE.Group>(null!);
@@ -177,6 +184,14 @@ export function Knife({ top, bottom, center, lift, active, onCut }: KnifeProps) 
       s.drop = Math.max(0, s.drop - dt / RAISE_SECONDS);
     }
 
+    if (onAim && active && s.drop < 0) {
+      const last = lastAim.current;
+      if (last.x !== s.x || last.z !== s.z || last.angle !== s.angle) {
+        lastAim.current = { x: s.x, z: s.z, angle: s.angle };
+        onAim(s.x, s.z, s.angle);
+      }
+    }
+
     rig.current.position.set(s.x, 0, s.z);
     rig.current.rotation.y = -s.angle;
     const t = Math.max(0, s.drop);
@@ -193,15 +208,20 @@ export function Knife({ top, bottom, center, lift, active, onCut }: KnifeProps) 
     <group ref={rig}>
       {/* Local X is the plane normal, Z runs along the blade. */}
       <group ref={blade}>
-        <mesh position={[0, BLADE_HEIGHT / 2, 0]} castShadow>
-          <boxGeometry args={[0.1, BLADE_HEIGHT, BLADE_LENGTH]} />
-          {/* Low metalness: there is no environment map yet for real metal to reflect. */}
-          <meshStandardMaterial color="#e6eaee" metalness={0.25} roughness={0.25} />
+        <mesh position={[0, bladeHeight / 2, 0]} castShadow>
+          <boxGeometry args={[0.1, bladeHeight, BLADE_LENGTH]} />
+          <meshStandardMaterial
+            color={skin.blade.color}
+            metalness={skin.blade.metalness}
+            roughness={skin.blade.roughness}
+            emissive={skin.blade.emissive ?? "#000000"}
+            emissiveIntensity={skin.blade.emissive ? 0.8 : 0}
+          />
         </mesh>
         {/* Handle on the far side (-Z) so it does not hide the apple from the default camera. */}
-        <mesh position={[0, BLADE_HEIGHT * 0.7, -(BLADE_LENGTH / 2 + 4)]} castShadow>
+        <mesh position={[0, bladeHeight * 0.7, -(BLADE_LENGTH / 2 + 4)]} castShadow>
           <boxGeometry args={[0.9, 1.5, 8]} />
-          <meshStandardMaterial color="#3b2a20" roughness={0.7} />
+          <meshStandardMaterial color={skin.handle.color} metalness={skin.handle.metalness ?? 0} roughness={0.6} />
         </mesh>
       </group>
       <group ref={guide}>

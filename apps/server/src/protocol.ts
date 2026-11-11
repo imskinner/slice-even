@@ -48,6 +48,8 @@ export interface Round {
   points: Record<string, number>;
   /** When the next round starts on its own, if there is one. */
   next_start_at: string | null;
+  /** When the round was scored (null while cutting, or for rooms saved before this existed). */
+  scored_at: string | null;
 }
 
 export interface Cut {
@@ -75,6 +77,8 @@ export type ClientMessage =
   | { type: "react"; emoji: string }
   | { type: "addBot"; level: "easy" | "medium" | "hard" }
   | { type: "removeBot"; playerId: string }
+  /** After the game: back to the lobby with the same room and whoever is still here. */
+  | { type: "rematch" }
   /** Where your knife is while aiming; relayed to the others as a ghost. */
   | { type: "aim"; x: number; z: number; angle: number }
   | { type: "ping" };
@@ -113,9 +117,8 @@ export const LIMITS = {
   maxRounds: 20,
   roundSeconds: 20,
   blitzSeconds: 8,
-  /** Results reveal: a beat per player plus the winner fanfare, then a pause. */
-  revealPerPlayerMs: 1400,
-  revealBaseMs: 2500,
+  /** After the reveal (see revealSchedule): the standings settle, then a pause. */
+  revealBaseMs: 1500,
   betweenRoundsMs: 6000,
   /** Accept cuts that arrive this long after the deadline (network latency). */
   graceMs: 2000,
@@ -126,3 +129,23 @@ export const LIMITS = {
   /** Rooms with no activity for this long are deleted. */
   idleMs: 12 * 60 * 60 * 1000,
 } as const;
+
+/** Results reveal: a pause, a quick beat for each also-ran, a drum roll for each of the top three. */
+export const REVEAL = { startMs: 500, quickMs: 350, slowMs: 1200, rollMs: 800 } as const;
+
+/**
+ * When each result comes out, worst cut first, in ms after the round is
+ * scored. Only the podium gets a drum roll, so a full table takes about as
+ * long as a small one. The server waits `total` (plus LIMITS.revealBaseMs)
+ * before the next round's countdown; the client plays the same schedule.
+ */
+export function revealSchedule(count: number): { steps: { at: number; roll: boolean }[]; total: number } {
+  const steps: { at: number; roll: boolean }[] = [];
+  let t: number = REVEAL.startMs;
+  for (let i = 0; i < count; i++) {
+    const roll = count - i <= 3;
+    t += roll ? REVEAL.slowMs : REVEAL.quickMs;
+    steps.push({ at: t, roll });
+  }
+  return { steps, total: t };
+}

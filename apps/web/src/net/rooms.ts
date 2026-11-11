@@ -69,6 +69,8 @@ function toLocalClock(state: RoomState, offsetMs: number): RoomState {
       started_at: shift(r.started_at),
       deadline: shift(r.deadline),
       next_start_at: shiftOrNull(r.next_start_at),
+      // `?? null`: a server deployed before this field existed.
+      scored_at: shiftOrNull(r.scored_at ?? null),
     })),
   };
 }
@@ -201,6 +203,7 @@ export function useRoom(code: string, name: string) {
   }, []);
 
   const start = useCallback(() => send({ type: "start" }), [send]);
+  const rematch = useCallback(() => send({ type: "rematch" }), [send]);
   const addBot = useCallback((level: "easy" | "medium" | "hard") => send({ type: "addBot", level }), [send]);
   const removeBot = useCallback((playerId: string) => send({ type: "removeBot", playerId }), [send]);
 
@@ -249,6 +252,7 @@ export function useRoom(code: string, name: string) {
     fatal,
     connected,
     start,
+    rematch,
     cut,
     react,
     reactions,

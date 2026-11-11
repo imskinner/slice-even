@@ -14,6 +14,7 @@ import {
   type KindMode,
 } from "./game.ts";
 import { recordCut } from "./progress/stats.ts";
+import { NO_SHIFT, type SceneShift } from "./ui/ResultDock.tsx";
 
 interface Round {
   kind: ObjectKind;
@@ -52,6 +53,7 @@ export function PracticeGame({ onExit }: { onExit(): void }) {
   }, [round, mode]);
 
   const [newBest, setNewBest] = useState(false);
+  const [shift, setShift] = useState<SceneShift>(NO_SHIFT);
   const handleCut = useCallback(
     (plane: Plane) => {
       const result = evaluateCut(object, plane);
@@ -76,7 +78,7 @@ export function PracticeGame({ onExit }: { onExit(): void }) {
 
   return (
     <>
-      <GameCanvas span={span}>
+      <GameCanvas span={span} shift={shift}>
         <SliceStage
           key={`${round.kind}:${round.seed}:${attempt}`}
           object={object}
@@ -96,6 +98,7 @@ export function PracticeGame({ onExit }: { onExit(): void }) {
         onNext={() => startRound(mode)}
         onRetry={retry}
         onHome={onExit}
+        onShift={setShift}
       />
     </>
   );

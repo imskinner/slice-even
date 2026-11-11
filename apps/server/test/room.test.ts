@@ -8,12 +8,14 @@ import {
   pickRule,
   placementPoints,
   publicView,
+  rematch,
+  revealDuration,
   RoomError,
   startRound,
   submitCut,
   type RoomData,
 } from "../src/room.ts";
-import { LIMITS } from "../src/protocol.ts";
+import { LIMITS, revealSchedule } from "../src/protocol.ts";
 
 const T0 = 1_700_000_000_000;
 const fixed = () => 0.1; // always the first kind: apple
@@ -195,5 +197,61 @@ describe("show rules", () => {
     const second = startRound(data, "ana", T0 + 5000, "s2", () => 0.6);
     expect(second.rule.type).toBe("blitz");
     expect(second.deadline - second.startedAt).toBe(LIMITS.blitzSeconds * 1000 + LIMITS.graceMs);
+  });
+});
+
+describe("reveal", () => {
+  it("drum-rolls only the podium, so a full table takes about as long as a small one", () => {
+    const eight = revealSchedule(8);
+    expect(eight.steps.map((s) => s.roll)).toEqual([false, false, false, false, false, true, true, true]);
+    expect(eight.steps.at(-1)!.at).toBe(eight.total);
+    expect(eight.total).toBeLessThan(6500);
+    expect(revealSchedule(2).steps.every((s) => s.roll)).toBe(true);
+    expect(revealDuration(8) - revealDuration(3)).toBeLessThan(2000);
+  });
+});
+
+describe("rematch", () => {
+  function finished(): RoomData {
+    const data = lobby(["ana", "bruno", "carla"]);
+    for (let n = 1; n <= 3; n++) {
+      startRound(data, "ana", T0 + n, `s${n}`, fixed);
+      for (const id of ["ana", "bruno", "carla"]) submitCut(data, id, n, perfectPlane(data, id), T0 + n);
+    }
+    return data;
+  }
+
+  it("only after the game is over, and only for someone in the room", () => {
+    const data = lobby();
+    expect(() => rematch(data, "ana", T0, new Set(["ana"]))).toThrow(/não acabou/);
+    expect(() => rematch(finished(), "nobody", T0, new Set())).toThrow(/não está/);
+  });
+
+  it("goes back to the lobby with scores cleared and new round ids", () => {
+    const data = finished();
+    expect(data.status).toBe("finished");
+    const before = publicView(data, "ana", new Set()).rounds[0]!.id;
+    expect(publicView(data, "ana", new Set()).rounds[0]!.scored_at).not.toBeNull();
+
+    rematch(data, "bruno", T0 + 100, new Set(["ana", "bruno", "carla"]));
+    expect(data.status).toBe("lobby");
+    expect(data.rounds).toEqual([]);
+    expect(data.cuts).toEqual([]);
+    expect(data.players.map((p) => [p.id, p.score, p.wins, p.lastCutRound])).toEqual([
+      ["ana", 0, 0, 0],
+      ["bruno", 0, 0, 0],
+      ["carla", 0, 0, 0],
+    ]);
+    expect(data.hostId).toBe("ana");
+
+    startRound(data, "ana", T0 + 200, "again", fixed);
+    expect(publicView(data, "ana", new Set()).rounds[0]!.id).not.toBe(before);
+  });
+
+  it("drops people who left and hands the room to whoever asked if the host is gone", () => {
+    const data = finished();
+    rematch(data, "carla", T0 + 100, new Set(["bruno", "carla"]));
+    expect(data.players.map((p) => p.id)).toEqual(["bruno", "carla"]);
+    expect(data.hostId).toBe("carla");
   });
 });

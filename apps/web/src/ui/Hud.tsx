@@ -4,6 +4,7 @@ import { Balance } from "./Balance.tsx";
 import { useEffect } from "react";
 import { sfx } from "../audio/sfx.ts";
 import { isTouchDevice } from "./TouchControls.tsx";
+import { useSceneShift, type SceneShift } from "./ResultDock.tsx";
 
 const MODES: readonly KindMode[] = ["random", ...OBJECT_KINDS];
 const modeLabel = (mode: KindMode) => (mode === "random" ? "🎲 Aleatório" : `${KIND_EMOJI[mode]} ${KIND_LABELS[mode]}`);
@@ -22,9 +23,11 @@ interface HudProps {
   onNext(): void;
   onRetry(): void;
   onHome(): void;
+  /** Tells the scene how far to slide so the result does not cover the cut. */
+  onShift?(shift: SceneShift): void;
 }
 
-export function Hud({ kind, seed, mode, outcome, newBest = false, onMode, onNext, onRetry, onHome }: HudProps) {
+export function Hud({ kind, seed, mode, outcome, newBest = false, onMode, onNext, onRetry, onHome, onShift }: HudProps) {
   return (
     <div className="hud">
       <header className="hud-top">
@@ -50,7 +53,7 @@ export function Hud({ kind, seed, mode, outcome, newBest = false, onMode, onNext
       </header>
 
       {!outcome && <ControlsHint />}
-      {outcome && <Result outcome={outcome} newBest={newBest} onNext={onNext} onRetry={onRetry} />}
+      {outcome && <Result outcome={outcome} newBest={newBest} onNext={onNext} onRetry={onRetry} onShift={onShift} />}
     </div>
   );
 }
@@ -86,12 +89,15 @@ function Result({
   newBest,
   onNext,
   onRetry,
+  onShift,
 }: {
   outcome: CutOutcome;
   newBest: boolean;
   onNext(): void;
   onRetry(): void;
+  onShift?(shift: SceneShift): void;
 }) {
+  const panel = useSceneShift(onShift);
   const { score } = outcome;
   const rating = rateError(score.error);
   const smaller = Math.min(score.fractionFront, 1 - score.fractionFront);
@@ -107,7 +113,7 @@ function Result({
   }, [tone]);
 
   return (
-    <div className="result panel">
+    <div className="result panel" ref={panel}>
       <div className={`rating ${missed || sliver ? "bad" : rating.tone}`}>{label}</div>
       {newBest && <div className="new-best">🏅 Novo recorde!</div>}
       {!missed && (

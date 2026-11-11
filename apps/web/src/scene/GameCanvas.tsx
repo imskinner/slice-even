@@ -1,11 +1,12 @@
-import { useEffect, useMemo, type ReactNode } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { woodMaterial } from "./materials.ts";
 import { Kitchen } from "./Kitchen.tsx";
 import { TouchControls } from "../ui/TouchControls.tsx";
+import { NO_SHIFT, type SceneShift } from "../ui/ResultDock.tsx";
 
 /**
  * Soft studio reflections without downloading an HDR: three's procedural
@@ -66,14 +67,49 @@ function FrameCamera({ span }: { span: number }) {
 }
 
 /**
- * Cutting board, lights and camera shared by practice and multiplayer.
- * `span` is the object's largest horizontal size, cm, for framing.
+ * Slides the picture (not the camera) so the board stays in view next to a
+ * results panel: `shift` is how many pixels left and up the scene moves.
+ * Eased, so the scene glides aside as the panel comes in.
  */
-export function GameCanvas({ children, span = 9 }: { children?: ReactNode; span?: number }) {
+function ShiftView({ shift }: { shift: SceneShift }) {
+  const { camera, size } = useThree();
+  const current = useRef({ x: 0, y: 0 });
+  const applied = useRef("");
+  useFrame((_, dt) => {
+    const c = current.current;
+    const k = 1 - Math.exp(-dt * 7);
+    c.x = Math.abs(shift.x - c.x) < 0.5 ? shift.x : c.x + (shift.x - c.x) * k;
+    c.y = Math.abs(shift.y - c.y) < 0.5 ? shift.y : c.y + (shift.y - c.y) * k;
+    // Also re-applied when the canvas is resized.
+    const key = `${c.x}:${c.y}:${size.width}:${size.height}`;
+    if (key === applied.current) return;
+    applied.current = key;
+    const cam = camera as THREE.PerspectiveCamera;
+    if (c.x === 0 && c.y === 0) cam.clearViewOffset();
+    else cam.setViewOffset(size.width, size.height, c.x, c.y, size.width, size.height);
+  });
+  return null;
+}
+
+/**
+ * Cutting board, lights and camera shared by practice and multiplayer.
+ * `span` is the object's largest horizontal size, cm, for framing; `shift`
+ * moves the scene out from under a results panel.
+ */
+export function GameCanvas({
+  children,
+  span = 9,
+  shift = NO_SHIFT,
+}: {
+  children?: ReactNode;
+  span?: number;
+  shift?: SceneShift;
+}) {
   return (
     <>
       <Canvas shadows="percentage" camera={{ position: [0, 15, 26], fov: 35 }} gl={{ alpha: true }}>
         <FrameCamera span={span} />
+        <ShiftView shift={shift} />
         <StudioEnvironment />
         {/* Distant parts of the kitchen fade into the wall color. */}
         <fog attach="fog" args={["#0f5c66", 90, 210]} />

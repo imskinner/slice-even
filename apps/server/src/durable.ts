@@ -9,6 +9,7 @@ import {
   join,
   nextAlarm,
   publicView,
+  rematch,
   RoomError,
   startRound,
   submitCut,
@@ -142,6 +143,11 @@ export class Room extends DurableObject<Env> {
           ws.serializeAttachment({ playerId: msg.playerId } satisfies Attachment);
           break;
         }
+        case "rematch": {
+          if (!attachment.playerId) return;
+          rematch(this.data, attachment.playerId, now, this.online());
+          break;
+        }
         case "start": {
           if (!attachment.playerId) return;
           const round = startRound(this.data, attachment.playerId, now, newSeed(), Math.random);
@@ -228,13 +234,24 @@ export class Room extends DurableObject<Env> {
     }
   }
 
+  private openSockets() {
+    return this.ctx.getWebSockets().filter((ws) => ws.readyState === WebSocket.OPEN);
+  }
+
+  /** Ids of the players with a live connection. */
+  private online(): Set<string> {
+    return new Set(
+      this.openSockets()
+        .map((ws) => (ws.deserializeAttachment() as Attachment).playerId)
+        .filter((id): id is string => !!id),
+    );
+  }
+
   /** Sends each connected player their own view of the room. */
   private broadcast() {
     if (!this.data) return;
-    const sockets = this.ctx.getWebSockets().filter((ws) => ws.readyState === WebSocket.OPEN);
-    const online = new Set(
-      sockets.map((ws) => (ws.deserializeAttachment() as Attachment).playerId).filter((id): id is string => !!id),
-    );
+    const sockets = this.openSockets();
+    const online = this.online();
     const serverTime = Date.now();
     for (const ws of sockets) {
       const { playerId } = ws.deserializeAttachment() as Attachment;

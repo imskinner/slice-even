@@ -5,7 +5,10 @@ import { SliceStage } from "../scene/SliceStage.tsx";
 import { appearanceFor, BLIND_AFTER_MS, evaluateCut, objectSpan, type CutOutcome } from "../game.ts";
 import { ItemBadge } from "../ui/Hud.tsx";
 import { useRoom, type Ghost, type Round } from "../net/rooms.ts";
-import { avatarColor, Lobby, RoundResults, RoundStatus, RuleCard } from "./RoomPanels.tsx";
+import { Lobby, RoundStatus, RuleCard } from "./RoomPanels.tsx";
+import { RoundResults } from "./RoundResults.tsx";
+import { displayName, rankPlayers, seatColor } from "./players.tsx";
+import { NO_SHIFT, type SceneShift } from "../ui/ResultDock.tsx";
 import { ReactionBar, ReactionLayer } from "./Reactions.tsx";
 import { recordCut, recordGameWin, recordRoundWin } from "../progress/stats.ts";
 
@@ -22,6 +25,7 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
     fatal,
     connected,
     start,
+    rematch,
     cut,
     react,
     reactions,
@@ -32,6 +36,8 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
     playerId: userId,
   } = useRoom(code, name);
   const [actionError, setActionError] = useState<string | null>(null);
+  // How far the scene slides to stay visible beside the results panel.
+  const [shift, setShift] = useState<SceneShift>(NO_SHIFT);
 
   const run = useCallback((action: () => void) => {
     setActionError(null);
@@ -50,7 +56,7 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
     counted.current.add(lastRound.id);
     if (lastRound.winner_id === userId) recordRoundWin();
     if (state.room.status === "finished") {
-      const champion = [...state.players].sort((a, b) => b.score - a.score || b.wins - a.wins)[0];
+      const champion = rankPlayers(state.players, state.rounds, state.cuts)[0];
       if (champion?.user_id === userId) recordGameWin();
     }
   }, [state, lastRound, userId]);
@@ -98,6 +104,7 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
           sendAim={sendAim}
           ghosts={ghosts}
           onError={setActionError}
+          shift={shift}
         />
       ) : (
         <GameCanvas />
@@ -134,19 +141,24 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
             key={round.id}
             room={room}
             round={round}
+            rounds={rounds}
             players={players}
             cuts={cuts}
             userId={userId}
             isHost={isHost}
             onNext={() => run(start)}
             onExit={onExit}
+            onRematch={() => run(rematch)}
+            onReact={react}
+            onShift={setShift}
           />
         )}
         {(actionError ?? error) && <div className="toast error">{actionError ?? error}</div>}
         {!connected && <div className="toast">Reconectando…</div>}
       </div>
       <ReactionLayer reactions={reactions} userId={userId} />
-      <ReactionBar onReact={react} />
+      {/* While results are up the reactions live inside that panel. */}
+      {round?.status !== "scored" && <ReactionBar onReact={react} />}
     </>
   );
 }
@@ -161,6 +173,7 @@ function RoundStage({
   sendAim,
   ghosts,
   onError,
+  shift,
 }: {
   round: Round;
   userId: string;
@@ -170,6 +183,7 @@ function RoundStage({
   sendAim(x: number, z: number, angle: number): void;
   ghosts: React.RefObject<Map<string, Ghost>>;
   onError(message: string | null): void;
+  shift: SceneShift;
 }) {
   const seed = objectSeed(round.seed, userId, round.rule);
   const target = ruleTarget(round.rule);
@@ -203,7 +217,7 @@ function RoundStage({
       players
         .filter((p) => p.user_id !== userId && !p.bot && round.participants.includes(p.user_id))
         .filter((p) => p.last_cut_round < round.number)
-        .map((p) => ({ id: p.user_id, name: p.name, color: avatarColor(p.user_id) })),
+        .map((p) => ({ id: p.user_id, name: p.name, color: seatColor(players, p.user_id) })),
     [players, userId, round],
   );
 
@@ -215,8 +229,8 @@ function RoundStage({
             .filter((c) => c.round_id === round.id && c.user_id !== userId)
             .map((c) => ({
               plane: c.plane,
-              color: avatarColor(c.user_id),
-              name: players.find((p) => p.user_id === c.user_id)?.name ?? "?",
+              color: seatColor(players, c.user_id),
+              name: displayName(players.find((p) => p.user_id === c.user_id) ?? { name: "?", bot: false }),
             }))
         : [],
     [round, cuts, players, userId],
@@ -242,7 +256,7 @@ function RoundStage({
   );
 
   return (
-    <GameCanvas span={span}>
+    <GameCanvas span={span} shift={shift}>
       <SliceStage
         object={object}
         skinColor={look.skinColor}

@@ -3,10 +3,13 @@ import { REACTIONS } from "@slice-even/server/protocol";
 import type { Reaction } from "../net/rooms.ts";
 import { sfx } from "../audio/sfx.ts";
 
-/** Row of emoji buttons; the server ignores taps faster than its rate limit. */
-export function ReactionBar({ onReact }: { onReact(emoji: string): void }) {
+/**
+ * Row of emoji buttons; the server ignores taps faster than its rate limit.
+ * Floats at the edge of the screen while cutting; `inline` sits inside a results panel.
+ */
+export function ReactionBar({ onReact, inline = false }: { onReact(emoji: string): void; inline?: boolean }) {
   return (
-    <div className="reaction-bar">
+    <div className={inline ? "reaction-bar inline" : "reaction-bar"}>
       {REACTIONS.map((emoji) => (
         <button
           key={emoji}

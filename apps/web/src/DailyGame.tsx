@@ -9,6 +9,7 @@ import { fetchDaily, recordStreak, submitDaily, type DailyResponse } from "./net
 import { loadName } from "./Home.tsx";
 import { sfx } from "./audio/sfx.ts";
 import { recordCut, recordDailyStreak } from "./progress/stats.ts";
+import { NO_SHIFT, ResultDock, type SceneShift } from "./ui/ResultDock.tsx";
 
 const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
@@ -52,6 +53,7 @@ export function DailyGame({ onExit, onPractice }: { onExit(): void; onPractice()
   const [error, setError] = useState<string | null>(null);
   const [local, setLocal] = useState<CutOutcome | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [shift, setShift] = useState<SceneShift>(NO_SHIFT);
 
   useEffect(() => {
     fetchDaily().then(setDaily, (e: Error) => setError(e.message));
@@ -96,7 +98,7 @@ export function DailyGame({ onExit, onPractice }: { onExit(): void; onPractice()
 
   return (
     <>
-      <GameCanvas span={span}>
+      <GameCanvas span={span} shift={shift}>
         {object && (
           <SliceStage
             object={object}
@@ -127,13 +129,21 @@ export function DailyGame({ onExit, onPractice }: { onExit(): void; onPractice()
             <ControlsHint />
           </div>
         )}
-        {outcome && (daily?.mine ? <DailyResult daily={daily} onPractice={onPractice} /> : submitting && <div className="hint">Pesando…</div>)}
+        {outcome && (daily?.mine ? <DailyResult daily={daily} onPractice={onPractice} onShift={setShift} /> : submitting && <div className="hint">Pesando…</div>)}
       </div>
     </>
   );
 }
 
-function DailyResult({ daily, onPractice }: { daily: DailyResponse; onPractice(): void }) {
+function DailyResult({
+  daily,
+  onPractice,
+  onShift,
+}: {
+  daily: DailyResponse;
+  onPractice(): void;
+  onShift(shift: SceneShift): void;
+}) {
   const mine = daily.mine!;
   const rating = rateError(mine.score.error);
   const [streak] = useState(() => recordStreak(daily.puzzle.date));
@@ -160,35 +170,63 @@ function DailyResult({ daily, onPractice }: { daily: DailyResponse; onPractice()
     }
   };
 
+  // The board shows the top ten; if you are further down, your own line goes under it.
+  const onBoard = daily.leaderboard.some((row) => row.you);
+
   return (
-    <div className="result panel">
-      <div className={`rating ${rating.tone}`}>{rating.label}</div>
+    <ResultDock
+      onShift={onShift}
+      head={
+        <>
+          <div className={`dock-title ${rating.tone}`}>{rating.label}</div>
+          <div className="dock-sub">
+            {precisionBar(mine.score.error)} <b>{pct(mine.score.error)}</b> de erro · <b>{mine.rank}º</b> de {mine.total}
+            {mine.total > 1 && <> · melhor que {Math.round(mine.beat * 100)}%</>}
+            {streak > 1 && <> · 🔥 {streak} dias</>}
+          </div>
+        </>
+      }
+      foot={
+        <>
+          <div className="stats">Próximo desafio em {next}</div>
+          <div className="actions">
+            <button className="btn btn-green" onClick={share}>
+              {copied ? "Copiado! ✓" : "Compartilhar"}
+            </button>
+            <button className="btn" onClick={onPractice}>
+              Treinar
+            </button>
+          </div>
+        </>
+      }
+    >
       <Balance left={mine.score.massBack} right={mine.score.massFront} />
-      <div className="daily-rank">
-        {precisionBar(mine.score.error)} <b>{pct(mine.score.error)}</b> de erro · <b>{mine.rank}º</b> de {mine.total}
-        {mine.total > 1 && <> · melhor que {Math.round(mine.beat * 100)}%</>}
-        {streak > 1 && <> · 🔥 {streak} dias</>}
-      </div>
-      <table className="ranking scoreboard">
-        <tbody>
-          {daily.leaderboard.map((row, i) => (
-            <tr key={i} className={row.you ? "me" : ""}>
-              <td>{["🥇", "🥈", "🥉"][i] ?? `${i + 1}º`}</td>
-              <td className="name">{row.you ? `${row.name} (você)` : row.name}</td>
-              <td className="total">{pct(row.error)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="stats">Próximo desafio em {next}</div>
-      <div className="actions">
-        <button className="btn btn-green" onClick={share}>
-          {copied ? "Copiado! ✓" : "Compartilhar resultado"}
-        </button>
-        <button className="btn" onClick={onPractice}>
-          Treinar
-        </button>
-      </div>
-    </div>
+      <div className="dock-label">Ranking de hoje</div>
+      <ol className="standings">
+        {daily.leaderboard.map((row, i) => (
+          <li key={i} className={row.you ? "srow slim me" : "srow slim"}>
+            <span className={`srow-rank${i < 3 ? " medal" : ""}`}>{["🥇", "🥈", "🥉"][i] ?? `${i + 1}º`}</span>
+            <span className="srow-name">
+              <span>{row.you ? `${row.name} (você)` : row.name}</span>
+            </span>
+            <span className={`srow-err ${rateError(row.error).tone}`}>{pct(row.error)}</span>
+          </li>
+        ))}
+        {!onBoard && (
+          <>
+            <li className="srow-gap" aria-hidden>
+              ⋮
+            </li>
+            <li className="srow slim me">
+              <span className="srow-rank">{mine.rank}º</span>
+              <span className="srow-name">
+                <span>{loadName() || "Anônimo"} (você)</span>
+              </span>
+              <span className={`srow-err ${rating.tone}`}>{pct(mine.score.error)}</span>
+            </li>
+          </>
+        )}
+      </ol>
+    </ResultDock>
   );
 }

@@ -11,7 +11,7 @@ import {
   type Plane,
   type RoundRule,
 } from "@slice-even/core";
-import { LIMITS, type RoomState } from "./protocol.ts";
+import { LIMITS, revealSchedule, type RoomState } from "./protocol.ts";
 
 /**
  * A room's whole game state and rules, with no Cloudflare APIs in sight so
@@ -48,6 +48,8 @@ export interface RoundRecord {
   participants: string[];
   points: Record<string, number>;
   nextStartAt: number | null;
+  /** When the round was scored; absent while cutting and in rooms saved before this existed. */
+  scoredAt?: number;
   /** When each bot in this round will cut (bots.ts fills it in). */
   botPlans: { playerId: string; at: number }[];
 }
@@ -76,6 +78,8 @@ export interface RoomData {
   public: boolean;
   /** Public tables start at this time (set when the first person arrives). */
   autoStartAt: number | null;
+  /** Which game this is in the room: 1, then +1 per rematch (absent in older rooms). */
+  game?: number;
 }
 
 /** A rule was broken; the message is shown to the player as is. */
@@ -251,7 +255,7 @@ export function placementPoints(roundNumber: number, place: number): number {
 
 /** How long clients spend revealing the results, so the next round waits for it. */
 export function revealDuration(players: number): number {
-  return LIMITS.revealBaseMs + LIMITS.revealPerPlayerMs * players;
+  return revealSchedule(players).total + LIMITS.revealBaseMs;
 }
 
 /** Ranks the current round if everyone cut or time is up. Returns whether it closed. */
@@ -269,6 +273,7 @@ export function finalizeRound(data: RoomData, now: number): boolean {
     if (player) player.score += earned;
   });
   round.status = "scored";
+  round.scoredAt = now;
   round.winnerId = ranked[0]?.playerId ?? null;
   if (ranked[0]) {
     const winner = data.players.find((p) => p.id === ranked[0]!.playerId);
@@ -278,6 +283,30 @@ export function finalizeRound(data: RoomData, now: number): boolean {
   else round.nextStartAt = now + revealDuration(round.participants.length) + LIMITS.betweenRoundsMs;
   data.lastActivity = now;
   return true;
+}
+
+/**
+ * After a finished game: back to the lobby in the same room, scores cleared.
+ * Bots and whoever is still connected stay; people who left are dropped so
+ * they are not waited for every round. Anyone may ask; if the host is gone,
+ * whoever asked takes over.
+ */
+export function rematch(data: RoomData, playerId: string, now: number, online: ReadonlySet<string>): void {
+  if (!data.players.some((p) => p.id === playerId)) throw new RoomError("Você não está nesta sala.");
+  if (data.status !== "finished") throw new RoomError("A partida ainda não acabou.");
+  data.players = data.players.filter((p) => p.bot !== undefined || p.id === playerId || online.has(p.id));
+  for (const p of data.players) {
+    p.score = 0;
+    p.wins = 0;
+    p.lastCutRound = 0;
+  }
+  if (!data.players.some((p) => p.id === data.hostId)) data.hostId = playerId;
+  data.rounds = [];
+  data.cuts = [];
+  data.status = "lobby";
+  data.game = (data.game ?? 1) + 1;
+  data.autoStartAt = data.public ? now + PUBLIC_COUNTDOWN_MS : null;
+  data.lastActivity = now;
 }
 
 /** When the Durable Object should wake up next: round deadline, next round, or idle cleanup. */
@@ -302,7 +331,8 @@ export function isIdle(data: RoomData, now: number): boolean {
 export function publicView(data: RoomData, viewerId: string, online: ReadonlySet<string>): RoomState {
   const iso = (t: number) => new Date(t).toISOString();
   const scored = new Set(data.rounds.filter((r) => r.status === "scored").map((r) => r.number));
-  const roundId = (n: number) => `${data.code}:${n}`;
+  // Unique across rematches, so clients never mistake a new round 1 for the old one.
+  const roundId = (n: number) => `${data.code}:${data.game ?? 1}:${n}`;
   return {
     room: {
       code: data.code,
@@ -337,6 +367,7 @@ export function publicView(data: RoomData, viewerId: string, online: ReadonlySet
       participants: r.participants,
       points: r.points,
       next_start_at: r.nextStartAt ? iso(r.nextStartAt) : null,
+      scored_at: r.scoredAt ? iso(r.scoredAt) : null,
     })),
     cuts: data.cuts
       .filter((c) => c.playerId === viewerId || scored.has(c.round))

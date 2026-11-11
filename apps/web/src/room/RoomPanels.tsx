@@ -4,6 +4,8 @@ import { ruleInfo } from "../game.ts";
 import { sfx } from "../audio/sfx.ts";
 import { Avatar, displayName, seatColor } from "./players.tsx";
 import { isTouchDevice } from "../ui/TouchControls.tsx";
+import { useSceneShift, type SceneShift } from "../ui/ResultDock.tsx";
+import { haptic } from "../audio/sfx.ts";
 import "./room.css";
 
 export const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
@@ -35,6 +37,7 @@ export function Lobby({
   onStart,
   onAddBot,
   onRemoveBot,
+  onShift,
 }: {
   room: Room;
   players: Player[];
@@ -42,7 +45,10 @@ export function Lobby({
   onStart(): void;
   onAddBot(level: BotLevel): void;
   onRemoveBot(playerId: string): void;
+  /** Tells the scene how far to slide so the showcase on the board stays in view. */
+  onShift?(shift: SceneShift): void;
 }) {
+  const panel = useSceneShift(onShift);
   const isHost = room.host_id === userId;
   const startsIn = useCountdown(room.auto_start_at ? new Date(room.auto_start_at).getTime() : 0);
   const [copied, setCopied] = useState(false);
@@ -58,7 +64,7 @@ export function Lobby({
   };
 
   return (
-    <div className="result panel lobby">
+    <div className="result panel lobby" ref={panel}>
       {room.public && (
         <div className="rule-chip">
           ⚡ <b>Mesa pública</b> · começa em {startsIn}s · lugares vazios viram bots
@@ -169,7 +175,10 @@ export function RoundStatus({
   const total = Math.max(1, (end - new Date(round.started_at).getTime()) / 1000);
   const remaining = useCountdown(end);
   useEffect(() => {
-    if (remaining > 0 && remaining <= 5) sfx.tick(remaining <= 3);
+    if (remaining > 0 && remaining <= 5) {
+      sfx.tick(remaining <= 3);
+      if (remaining <= 3) haptic(8);
+    }
   }, [remaining]);
   const [touch] = useState(isTouchDevice);
   const iCut = cuts.some((c) => c.round_id === round.id && c.user_id === userId);
@@ -177,6 +186,15 @@ export function RoundStatus({
   const done = inRound.filter((p) => p.last_cut_round >= round.number).length;
   const waiting = !round.participants.includes(userId);
   const info = ruleInfo(round.rule);
+
+  // The last seconds, for whoever still has to cut: a tone that climbs until time is up.
+  const tense = remaining > 0 && remaining <= 5 && !iCut && !waiting;
+  useEffect(() => {
+    if (!tense) return;
+    return sfx.riser(remaining);
+    // Started once, when the last five seconds begin.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tense]);
 
   const hint = waiting
     ? "Você entrou no meio da rodada: joga a partir da próxima!"

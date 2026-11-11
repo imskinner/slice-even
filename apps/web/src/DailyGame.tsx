@@ -3,7 +3,6 @@ import { generateObject, type Plane } from "@slice-even/core";
 import { GameCanvas } from "./scene/GameCanvas.tsx";
 import { SliceStage } from "./scene/SliceStage.tsx";
 import { ControlsHint, ItemBadge } from "./ui/Hud.tsx";
-import { Balance } from "./ui/Balance.tsx";
 import { appearanceFor, evaluateCut, KIND_EMOJI, KIND_LABELS, objectSpan, rateError, type CutOutcome } from "./game.ts";
 import { fetchDaily, recordStreak, submitDaily, type DailyResponse } from "./net/daily.ts";
 import { loadName } from "./Home.tsx";
@@ -98,7 +97,7 @@ export function DailyGame({ onExit, onPractice }: { onExit(): void; onPractice()
 
   return (
     <>
-      <GameCanvas span={span} shift={shift}>
+      <GameCanvas span={span} shift={shift} weighing={!!outcome}>
         {object && (
           <SliceStage
             object={object}
@@ -202,7 +201,6 @@ function DailyResult({
         </>
       }
     >
-      <Balance left={mine.score.massBack} right={mine.score.massFront} />
       <div className="dock-label">Ranking de hoje</div>
       <ol className="standings">
         {daily.leaderboard.map((row, i) => (

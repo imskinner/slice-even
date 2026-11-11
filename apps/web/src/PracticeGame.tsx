@@ -78,7 +78,7 @@ export function PracticeGame({ onExit }: { onExit(): void }) {
 
   return (
     <>
-      <GameCanvas span={span} shift={shift}>
+      <GameCanvas span={span} shift={shift} weighing={!!outcome}>
         <SliceStage
           key={`${round.kind}:${round.seed}:${attempt}`}
           object={object}

@@ -64,6 +64,8 @@ function audio(): { ctx: AudioContext; out: GainNode; noise: AudioBuffer } | nul
 export function unlockOnGesture() {
   const unlock = () => {
     audio();
+    // The context takes a moment to start running after the gesture.
+    setTimeout(syncAmbience, 400);
     window.removeEventListener("pointerdown", unlock);
     window.removeEventListener("keydown", unlock);
   };
@@ -84,6 +86,7 @@ export function setMuted(value: boolean) {
   }
   if (value) void ctx?.suspend();
   else void ctx?.resume();
+  setTimeout(syncAmbience, 400);
   listeners.forEach((l) => l(value));
 }
 
@@ -254,6 +257,7 @@ export const sfx = {
     if (!a) return;
     const t = a.ctx.currentTime;
     const note = (semitones: number) => 523.25 * 2 ** (semitones / 12);
+    haptic(tone_ === "great" ? [18, 50, 18, 50, 40] : tone_ === "bad" ? 90 : 25);
     const play = (steps: number[], gap: number, type: OscillatorType, decay: number, peak: number) =>
       steps.forEach((s, i) => tone(a, t + i * gap, type, note(s), null, { decay, peak }));
     switch (tone_) {
@@ -310,4 +314,148 @@ export const sfx = {
     [0, 4, 7, 12, 7, 12].forEach((s, i) => tone(a, t + i * 0.11, "square", note(s), null, { decay: 0.2, peak: 0.12 }, 2600));
     tone(a, t + 0.66, "triangle", note(12), null, { decay: 0.9, peak: 0.25 });
   },
+
+  /** An object landing on the board. */
+  thud() {
+    const a = audio();
+    if (!a) return;
+    const t = a.ctx.currentTime;
+    tone(a, t, "sine", jitter(120), 48, { decay: 0.16, peak: 0.5 });
+    noiseBurst(a, t, { type: "lowpass", from: 700, to: 200 }, { decay: 0.07, peak: 0.25 });
+  },
+
+  /** The serving dome coming down (blind rounds): a metallic ring. */
+  clang() {
+    const a = audio();
+    if (!a) return;
+    const t = a.ctx.currentTime;
+    for (const [f, p, d] of [[1180, 0.14, 0.7], [1765, 0.08, 0.5], [2640, 0.05, 0.35]] as const) {
+      tone(a, t, "sine", jitter(f, 0.01), null, { decay: d, peak: p });
+    }
+    noiseBurst(a, t, { type: "bandpass", from: 3200, q: 2 }, { decay: 0.04, peak: 0.2 });
+  },
+
+  /**
+   * Tension for the last seconds of a round: a tone and a hiss that rise
+   * until time is up. Returns a function that cuts it short (you cut, or the
+   * round ended).
+   */
+  riser(seconds: number): () => void {
+    const a = audio();
+    if (!a || seconds <= 0) return () => undefined;
+    const t = a.ctx.currentTime;
+    const end = t + seconds;
+    const out = a.ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.09, end);
+    out.connect(a.out);
+
+    const osc = a.ctx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(600, end);
+    osc.connect(out);
+    osc.start(t);
+    osc.stop(end + 0.3);
+
+    const hiss = a.ctx.createBufferSource();
+    hiss.buffer = a.noise;
+    hiss.loop = true;
+    const band = a.ctx.createBiquadFilter();
+    band.type = "bandpass";
+    band.Q.value = 3;
+    band.frequency.setValueAtTime(500, t);
+    band.frequency.exponentialRampToValueAtTime(4500, end);
+    const hissGain = a.ctx.createGain();
+    hissGain.gain.value = 0.5;
+    hiss.connect(band).connect(hissGain).connect(out);
+    hiss.start(t);
+    hiss.stop(end + 0.3);
+
+    return () => {
+      const now = a.ctx.currentTime;
+      out.gain.cancelScheduledValues(now);
+      out.gain.setTargetAtTime(0.0001, now, 0.04);
+      osc.stop(now + 0.3);
+      hiss.stop(now + 0.3);
+    };
+  },
 };
+
+/* ------------------------------------------------------------ ambience */
+
+let ambienceWanted = false;
+let ambience: { stop(): void } | null = null;
+
+/**
+ * A quiet kitchen behind the game: the hum of a fridge and a little room
+ * tone. It is a wish rather than a call, because audio may not be allowed
+ * yet (or may be muted) when a screen asks for it; it starts when it can.
+ */
+function syncAmbience() {
+  if (!ambienceWanted || muted) {
+    ambience?.stop();
+    ambience = null;
+    return;
+  }
+  if (ambience) return;
+  const a = audio();
+  if (!a) return;
+  const t = a.ctx.currentTime;
+  const out = a.ctx.createGain();
+  out.gain.setValueAtTime(0.0001, t);
+  out.gain.exponentialRampToValueAtTime(1, t + 2);
+  out.connect(a.out);
+
+  const sources: AudioScheduledSourceNode[] = [];
+  for (const [f, level] of [[50, 0.05], [100, 0.022], [151, 0.008]] as const) {
+    const osc = a.ctx.createOscillator();
+    osc.frequency.value = f;
+    const g = a.ctx.createGain();
+    g.gain.value = level;
+    osc.connect(g).connect(out);
+    osc.start(t);
+    sources.push(osc);
+  }
+  const room = a.ctx.createBufferSource();
+  room.buffer = a.noise;
+  room.loop = true;
+  const low = a.ctx.createBiquadFilter();
+  low.type = "lowpass";
+  low.frequency.value = 420;
+  const roomGain = a.ctx.createGain();
+  roomGain.gain.value = 0.03;
+  room.connect(low).connect(roomGain).connect(out);
+  room.start(t);
+  sources.push(room);
+
+  const ctx = a.ctx;
+  ambience = {
+    stop() {
+      const now = ctx.currentTime;
+      out.gain.cancelScheduledValues(now);
+      out.gain.setTargetAtTime(0.0001, now, 0.15);
+      for (const s of sources) s.stop(now + 1);
+    },
+  };
+}
+
+/** Turn the kitchen ambience on (in a game) or off (menus). */
+export function setAmbience(on: boolean) {
+  ambienceWanted = on;
+  syncAmbience();
+}
+
+/**
+ * A buzz on phones that can (Android; iOS has no web vibration). Follows the
+ * sound toggle: muted means quiet in the hand too.
+ */
+export function haptic(pattern: number | number[]) {
+  // Browsers refuse (and log) vibration before the first tap on the page.
+  if (muted || navigator.userActivation?.hasBeenActive === false) return;
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    // Not allowed here; it is only a nicety.
+  }
+}

@@ -39,20 +39,6 @@
   padding: 2px 12px 10px;
 }
 
-/* The scale's pans hang past the ends of its beam: keep them inside the panel. */
-.dock .balance-beam {
-  left: 20%;
-  right: 20%;
-}
-
-.dock .balance-pan {
-  width: 104px;
-}
-
-.dock .dish .pct {
-  font-size: 21px;
-}
-
 .dock-foot {
   flex: none;
   display: flex;

@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { generateObject, objectSeed, ruleTarget, type CutResult, type Plane } from "@slice-even/core";
+import {
+  generateObject,
+  objectSeed,
+  ruleTarget,
+  type AnyGeneratedObject,
+  type CutResult,
+  type Plane,
+} from "@slice-even/core";
 import { GameCanvas } from "../scene/GameCanvas.tsx";
 import { SliceStage } from "../scene/SliceStage.tsx";
-import { appearanceFor, BLIND_AFTER_MS, evaluateCut, objectSpan, type CutOutcome } from "../game.ts";
+import {
+  appearanceFor,
+  BLIND_AFTER_MS,
+  evaluateCut,
+  objectSpan,
+  pickKind,
+  randomSeed,
+  type CutOutcome,
+} from "../game.ts";
 import { ItemBadge } from "../ui/Hud.tsx";
-import { useRoom, type Ghost, type Round } from "../net/rooms.ts";
+import { useRoom, type Ghost, type Player, type Round } from "../net/rooms.ts";
 import { Lobby, RoundStatus, RuleCard } from "./RoomPanels.tsx";
 import { RoundResults } from "./RoundResults.tsx";
 import { displayName, rankPlayers, seatColor } from "./players.tsx";
@@ -61,6 +76,20 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
     }
   }, [state, lastRound, userId]);
 
+  // The object of the current round is made here, outside the canvas, which
+  // needs its size to frame it. In the lobby the board shows a showcase instead.
+  const liveSeed = lastRound ? objectSeed(lastRound.seed, userId, lastRound.rule) : null;
+  const liveKind = lastRound?.kind;
+  const roundObject = useMemo(
+    () => (liveKind && liveSeed ? generateObject(liveKind, liveSeed) : null),
+    [liveKind, liveSeed],
+  );
+  const showcase = useShowcase(!!state && !lastRound);
+  const span = useMemo(() => {
+    const shown = roundObject ?? showcase?.object;
+    return shown ? objectSpan(shown) : undefined;
+  }, [roundObject, showcase?.object]);
+
   // Put the code in the URL so a reload rejoins and the link can be shared.
   useEffect(() => {
     const url = new URL(location.href);
@@ -93,22 +122,37 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
 
   return (
     <>
-      {round ? (
-        <RoundStage
-          key={round.id}
-          round={round}
-          userId={userId}
-          players={players}
-          cuts={cuts}
-          cut={cut}
-          sendAim={sendAim}
-          ghosts={ghosts}
-          onError={setActionError}
-          shift={shift}
-        />
-      ) : (
-        <GameCanvas />
-      )}
+      {/* One canvas for the whole visit: rounds come and go inside it, the kitchen stays. */}
+      <GameCanvas span={span} shift={shift} weighing={round?.status === "scored"}>
+        {round && roundObject ? (
+          <RoundScene
+            key={round.id}
+            round={round}
+            object={roundObject}
+            userId={userId}
+            players={players}
+            cuts={cuts}
+            cut={cut}
+            sendAim={sendAim}
+            ghosts={ghosts}
+            onError={setActionError}
+          />
+        ) : (
+          showcase && (
+            <SliceStage
+              key={showcase.key}
+              object={showcase.object}
+              skinColor={showcase.look.skinColor}
+              stemTilt={showcase.look.stemTilt}
+              outcome={null}
+              onCut={noCut}
+              locked
+              leaving={showcase.leaving}
+              quiet
+            />
+          )
+        )}
+      </GameCanvas>
       <div className="hud">
         <header className="hud-top">
           <button className="btn btn-small" onClick={onExit}>
@@ -129,6 +173,7 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
             onStart={() => run(start)}
             onAddBot={(level) => run(() => addBot(level))}
             onRemoveBot={(id) => run(() => removeBot(id))}
+            onShift={setShift}
           />
         )}
         {room.status !== "lobby" && round?.status === "cutting" && (
@@ -165,8 +210,9 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
 }
 
 /** The player's own object for this round, the knife, and the server round trip. */
-function RoundStage({
+function RoundScene({
   round,
+  object,
   userId,
   players,
   cuts,
@@ -174,23 +220,20 @@ function RoundStage({
   sendAim,
   ghosts,
   onError,
-  shift,
 }: {
   round: Round;
+  object: AnyGeneratedObject;
   userId: string;
-  players: { user_id: string; name: string; bot: boolean; last_cut_round: number }[];
+  players: Player[];
   cuts: { round_id: string; user_id: string; plane: Plane }[];
   cut(round: number, plane: Plane): Promise<CutResult>;
   sendAim(x: number, z: number, angle: number): void;
   ghosts: React.RefObject<Map<string, Ghost>>;
   onError(message: string | null): void;
-  shift: SceneShift;
 }) {
   const seed = objectSeed(round.seed, userId, round.rule);
   const target = ruleTarget(round.rule);
-  const object = useMemo(() => generateObject(round.kind, seed), [round.kind, seed]);
   const look = useMemo(() => appearanceFor(seed), [seed]);
-  const span = useMemo(() => objectSpan(object), [object]);
   const [local, setLocal] = useState<CutOutcome | null>(null);
 
   // After a reload the cut only exists on the server; rebuild the halves from it.
@@ -213,14 +256,25 @@ function RoundStage({
     },
     [sendAim],
   );
-  const ghostPlayers = useMemo(
-    () =>
-      players
-        .filter((p) => p.user_id !== userId && !p.bot && round.participants.includes(p.user_id))
-        .filter((p) => p.last_cut_round < round.number)
-        .map((p) => ({ id: p.user_id, name: p.name, color: seatColor(players, p.user_id) })),
-    [players, userId, round],
-  );
+  const ghostPlayers = useMemo(() => {
+    const aiming = players.filter(
+      (p) => p.user_id !== userId && round.participants.includes(p.user_id) && p.last_cut_round < round.number,
+    );
+    const ghost = (p: Player, wander?: number) => ({
+      id: p.user_id,
+      name: displayName(p),
+      color: seatColor(players, p.user_id),
+      wander,
+    });
+    return [
+      ...aiming.filter((p) => !p.bot).map((p) => ghost(p)),
+      // Bots send no aim, so theirs wander by themselves; a few are enough to make the table feel busy.
+      ...aiming
+        .filter((p) => p.bot)
+        .slice(0, MAX_BOT_GHOSTS)
+        .map((p) => ghost(p, players.indexOf(p) * 1.7 + 0.5)),
+    ];
+  }, [players, userId, round]);
 
   // Same object for everyone: after the round, show where each player cut it.
   const otherCuts = useMemo(
@@ -237,12 +291,14 @@ function RoundStage({
     [round, cuts, players, userId],
   );
   const playing = round.participants.includes(userId);
-  // Blind rounds: the object vanishes a few seconds after the round starts.
+  // Blind rounds: a cloche covers the object a few seconds after the round starts.
   const [hideAfterMs] = useState(() =>
     round.rule.type === "blind"
       ? Math.max(0, new Date(round.started_at).getTime() + BLIND_AFTER_MS - Date.now())
       : undefined,
   );
+  // Just before the next round starts by itself, this one is swept off the board.
+  const leaving = useAfter(round.next_start_at ? new Date(round.next_start_at).getTime() - SWEEP_MS : null);
 
   const handleCut = useCallback(
     (plane: Plane) => {
@@ -257,22 +313,74 @@ function RoundStage({
   );
 
   return (
-    <GameCanvas span={span} shift={shift}>
-      <SliceStage
-        object={object}
-        skinColor={look.skinColor}
-        stemTilt={look.stemTilt}
-        outcome={outcome}
-        onCut={handleCut}
-        locked={round.status === "scored" || timeUp || !playing}
-        revealIdeal={round.status === "scored"}
-        hideAfterMs={round.status === "cutting" ? hideAfterMs : undefined}
-        otherCuts={otherCuts}
-        onAim={round.status === "cutting" ? aim : undefined}
-        ghosts={round.status === "cutting" ? { positions: ghosts, players: ghostPlayers } : undefined}
-      />
-    </GameCanvas>
+    <SliceStage
+      object={object}
+      skinColor={look.skinColor}
+      stemTilt={look.stemTilt}
+      outcome={outcome}
+      onCut={handleCut}
+      locked={round.status === "scored" || timeUp || !playing}
+      revealIdeal={round.status === "scored"}
+      hideAfterMs={hideAfterMs}
+      otherCuts={otherCuts}
+      onAim={round.status === "cutting" ? aim : undefined}
+      ghosts={round.status === "cutting" ? { positions: ghosts, players: ghostPlayers } : undefined}
+      leaving={leaving}
+    />
   );
+}
+
+/** At most this many bots show a wandering ghost knife at once. */
+const MAX_BOT_GHOSTS = 3;
+/** The finished round slides off the board this long before the next one starts. */
+const SWEEP_MS = 550;
+/** How long each object stays on the lobby's board. */
+const SHOWCASE_MS = 4200;
+
+const noCut = () => undefined;
+
+/**
+ * Something to look at while waiting in the lobby: one object after another
+ * drops onto the board, sits there a moment and is swept off.
+ */
+function useShowcase(active: boolean) {
+  const [turn, setTurn] = useState(0);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    setLeaving(false);
+    const sweep = setTimeout(() => setLeaving(true), SHOWCASE_MS - SWEEP_MS);
+    const next = setTimeout(() => setTurn((n) => n + 1), SHOWCASE_MS);
+    return () => {
+      clearTimeout(sweep);
+      clearTimeout(next);
+    };
+  }, [active, turn]);
+  return useMemo(() => {
+    if (!active) return null;
+    const seed = randomSeed();
+    return { key: `${turn}:${seed}`, object: generateObject(pickKind("random"), seed), look: appearanceFor(seed), leaving };
+    // A new object per turn; `leaving` only flips its flag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, turn, leaving]);
+}
+
+/** True once the clock passes `at` (ms); false while `at` is null. */
+function useAfter(at: number | null): boolean {
+  const [passed, setPassed] = useState(() => at !== null && Date.now() >= at);
+  useEffect(() => {
+    if (at === null) {
+      setPassed(false);
+      return;
+    }
+    if (Date.now() >= at) {
+      setPassed(true);
+      return;
+    }
+    const id = setTimeout(() => setPassed(true), at - Date.now());
+    return () => clearTimeout(id);
+  }, [at]);
+  return passed;
 }
 
 function useDeadlinePassed(round: Round): boolean {

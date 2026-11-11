@@ -1,6 +1,5 @@
 import { OBJECT_KINDS, type ObjectKind } from "@slice-even/core";
 import { KIND_EMOJI, KIND_LABELS, rateError, type CutOutcome, type KindMode } from "../game.ts";
-import { Balance } from "./Balance.tsx";
 import { useEffect } from "react";
 import { sfx } from "../audio/sfx.ts";
 import { isTouchDevice } from "./TouchControls.tsx";
@@ -107,19 +106,18 @@ function Result({
   const label = missed ? "Errou o alvo!" : sliver ? "Só uma lasquinha!" : rating.label;
   const tone = missed || sliver ? "bad" : rating.tone;
 
-  // Timed with the rating sticker popping in.
+  // Timed with the rating sticker popping in, once the balance in the scene has tipped.
   useEffect(() => {
-    const id = setTimeout(() => sfx.result(tone), 550);
+    const id = setTimeout(() => sfx.result(tone), 1500);
     return () => clearTimeout(id);
   }, [tone]);
 
   return (
-    <div className="result panel" ref={panel}>
+    <div className="result panel after-weigh" ref={panel}>
       <div className={`rating ${missed || sliver ? "bad" : rating.tone}`}>{label}</div>
       {newBest && <div className="new-best">🏅 Novo recorde!</div>}
       {!missed && (
         <>
-          <Balance left={score.massBack} right={score.massFront} />
           <div className="stats">
             Erro <b>{pct(score.error)}</b> · {mm(outcome.offsetFromIdeal)} do corte perfeito{" "}
             <span className="legend">(linha verde)</span>

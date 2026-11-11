@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { Plane } from "@slice-even/core";
-import { sfx } from "../audio/sfx.ts";
+import { haptic, sfx } from "../audio/sfx.ts";
+import { RoundedBox } from "@react-three/drei";
 import { selectedSkin } from "../progress/skins.ts";
 
 interface KnifeProps {
@@ -38,6 +39,45 @@ export const KNIFE_TURN = "knife:turn";
 export const KNIFE_CUT = "knife:cut";
 export const KNIFE_STATE = "knife:state";
 
+/** Asks the scene for a short screen shake (see ShiftView in GameCanvas). */
+export const SCENE_KICK = "scene:kick";
+
+/** The blade stops for this long as it first bites into the object. */
+const BITE_SECONDS = 0.055;
+
+/**
+ * A chef's knife seen from the side: straight edge along the bottom, belly
+ * curving up to the tip, straight spine. Tall skins (the cleaver) are a
+ * plain rectangle. Thin along X (the cut's normal), long along Z.
+ */
+function bladeGeometry(height: number, cleaver: boolean): THREE.BufferGeometry {
+  const half = BLADE_LENGTH / 2;
+  const shape = new THREE.Shape();
+  shape.moveTo(-half, 0);
+  if (cleaver) {
+    shape.lineTo(half, 0);
+    shape.lineTo(half, height);
+  } else {
+    shape.lineTo(half - 4, 0);
+    shape.quadraticCurveTo(half - 0.6, 0.15, half, height * 0.62);
+    shape.quadraticCurveTo(half - 1.2, height, half - 4.5, height);
+  }
+  shape.lineTo(-half, height);
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.1,
+    bevelEnabled: true,
+    bevelThickness: 0.03,
+    bevelSize: 0.05,
+    bevelSegments: 1,
+    curveSegments: 14,
+  });
+  // The shape was drawn in XY and extruded along Z: stand it along Z, thin along X.
+  geometry.translate(0, 0, -0.05);
+  geometry.rotateY(-Math.PI / 2);
+  return geometry;
+}
+
 /**
  * Vertical knife that follows the mouse over the apple. Wheel or Q/E turn it,
  * arrows nudge it, Shift slows everything down, click or Space cuts.
@@ -67,6 +107,8 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim }: Knife
     /** -1 while aiming, 0..1 while dropping, then back down to 0 while raising. */
     drop: -1,
     fired: false,
+    /** Seconds left of the pause as the blade bites; -1 once it has happened. */
+    bite: 0,
   }).current;
 
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
@@ -175,9 +217,21 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim }: Knife
       s.x = THREE.MathUtils.clamp(s.x, -AIM_LIMIT, AIM_LIMIT);
       s.z = THREE.MathUtils.clamp(s.z, -AIM_LIMIT, AIM_LIMIT);
     } else if (s.drop >= 0 && !s.fired) {
-      s.drop = Math.min(1, s.drop + dt / DROP_SECONDS);
+      // A beat of resistance as the edge meets the object, then straight through.
+      const contact = Math.sqrt((hover - top) / (hover - bottom + 0.3));
+      if (s.bite > 0) s.bite -= dt;
+      else {
+        const before = s.drop;
+        s.drop = Math.min(1, s.drop + dt / DROP_SECONDS);
+        if (s.bite === 0 && before < contact && s.drop >= contact) {
+          s.drop = contact;
+          s.bite = BITE_SECONDS;
+        } else if (s.bite <= 0 && before >= contact) s.bite = -1;
+      }
       if (s.drop === 1) {
         s.fired = true;
+        haptic(22);
+        window.dispatchEvent(new Event(SCENE_KICK));
         onCut({ point: [s.x, center, s.z], normal: [Math.cos(s.angle), 0, Math.sin(s.angle)] });
       }
     } else if (s.fired) {
@@ -203,13 +257,14 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim }: Knife
   });
 
   const guideHeight = top - bottom + 2;
+  const blade3d = useMemo(() => bladeGeometry(bladeHeight, skin.height >= 1.5), [bladeHeight, skin.height]);
+  useEffect(() => () => blade3d.dispose(), [blade3d]);
 
   return (
     <group ref={rig}>
       {/* Local X is the plane normal, Z runs along the blade. */}
       <group ref={blade}>
-        <mesh position={[0, bladeHeight / 2, 0]} castShadow>
-          <boxGeometry args={[0.1, bladeHeight, BLADE_LENGTH]} />
+        <mesh geometry={blade3d} castShadow>
           <meshStandardMaterial
             color={skin.blade.color}
             metalness={skin.blade.metalness}
@@ -218,11 +273,20 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim }: Knife
             emissiveIntensity={skin.blade.emissive ? 0.8 : 0}
           />
         </mesh>
-        {/* Handle on the far side (-Z) so it does not hide the apple from the default camera. */}
-        <mesh position={[0, bladeHeight * 0.7, -(BLADE_LENGTH / 2 + 4)]} castShadow>
-          <boxGeometry args={[0.9, 1.5, 8]} />
-          <meshStandardMaterial color={skin.handle.color} metalness={skin.handle.metalness ?? 0} roughness={0.6} />
+        {/* Bolster and handle on the far side (-Z) so they do not hide the object from the default camera. */}
+        <mesh position={[0, bladeHeight * 0.62, -(BLADE_LENGTH / 2 + 0.3)]} castShadow>
+          <boxGeometry args={[0.5, Math.min(2.2, bladeHeight * 0.75), 0.7]} />
+          <meshStandardMaterial color={skin.blade.color} metalness={0.6} roughness={0.3} />
         </mesh>
+        <RoundedBox
+          args={[0.95, 1.5, 7.4]}
+          radius={0.4}
+          smoothness={3}
+          position={[0, bladeHeight * 0.62, -(BLADE_LENGTH / 2 + 4.2)]}
+          castShadow
+        >
+          <meshStandardMaterial color={skin.handle.color} metalness={skin.handle.metalness ?? 0} roughness={0.6} />
+        </RoundedBox>
       </group>
       <group ref={guide}>
         <mesh position={[0, (top + bottom) / 2, 0]} rotation={[0, Math.PI / 2, 0]}>

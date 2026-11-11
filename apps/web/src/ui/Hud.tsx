@@ -34,7 +34,8 @@ export function Hud({ kind, seed, mode, outcome, newBest = false, onMode, onNext
         <button className="btn btn-small" onClick={onHome}>
           ← Início
         </button>
-        <h1 className="hud-title">Treino</h1>
+        {/* Phones drop the title: the item badge says enough, and the modes need the room. */}
+        <h1 className="hud-title wide-only">Treino</h1>
         <ItemBadge kind={kind} extra={`#${seed}`} />
         <nav className="modes">
           {MODES.map((m) => (

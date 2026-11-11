@@ -4,6 +4,7 @@ import {
   objectSeed,
   OBJECT_KINDS,
   parseCutPlane,
+  precisionStars,
   ruleTarget,
   scoreCut,
   type CutResult,
@@ -18,8 +19,10 @@ import { LIMITS, revealSchedule, type RoomState } from "./protocol.ts";
  * it can be unit tested. The Durable Object stores this object and calls
  * these functions; `now` and randomness are always passed in.
  *
- * Scoring follows the TV show: round N is worth N points to its winner, so
- * whoever is behind can always come back in the later rounds.
+ * Scoring: every cut earns up to three precision stars, and in round N a
+ * star is worth N points, so everyone scores by how well they cut and
+ * whoever is behind can still come back in the later rounds. On top of
+ * that the round's podium takes a bonus (the TV show's rule): N, N/2, N/4.
  */
 
 export interface PlayerRecord {
@@ -242,15 +245,17 @@ export function submitCut(data: RoomData, playerId: string, roundNumber: number,
   return score;
 }
 
-/** Bonus point for a cut within 1% of the goal, win or lose. */
-export const PRECISION_BONUS_ERROR = 0.01;
-
 /**
- * Points for a finishing position in round N: the winner takes N (the TV
- * show's rule), second gets half, third a quarter, rounded down.
+ * Podium bonus in round N: the winner takes N (the TV show's rule), second
+ * gets half, third a quarter, rounded down.
  */
 export function placementPoints(roundNumber: number, place: number): number {
   return place > 2 ? 0 : Math.floor(roundNumber / 2 ** place);
+}
+
+/** What a cut earns: its precision stars at the round's value, plus the podium bonus. */
+export function cutPoints(roundNumber: number, place: number, error: number): number {
+  return roundNumber * precisionStars(error) + placementPoints(roundNumber, place);
 }
 
 /** How long clients spend revealing the results, so the next round waits for it. */
@@ -267,7 +272,7 @@ export function finalizeRound(data: RoomData, now: number): boolean {
 
   const ranked = [...cuts].sort((a, b) => a.error - b.error || a.submittedAt - b.submittedAt);
   ranked.forEach((cut, place) => {
-    const earned = placementPoints(round.number, place) + (cut.error < PRECISION_BONUS_ERROR ? 1 : 0);
+    const earned = cutPoints(round.number, place, cut.error);
     round.points[cut.playerId] = earned;
     const player = data.players.find((p) => p.id === cut.playerId);
     if (player) player.score += earned;

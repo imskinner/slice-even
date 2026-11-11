@@ -22,7 +22,7 @@ export interface Player {
   user_id: string;
   name: string;
   wins: number;
-  /** Game score: round N is worth N points (see LIMITS / room.ts). */
+  /** Game score: precision stars times the round number, plus podium bonuses (see cutPoints in room.ts). */
   score: number;
   last_cut_round: number;
   joined_at: string;

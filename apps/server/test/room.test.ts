@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { findBisectingPlane, findPlaneAtFraction, generateObject, objectSeed } from "@slice-even/core";
 import {
   createRoomData,
+  cutPoints,
   finalizeRound,
   join,
   nextAlarm,
@@ -85,9 +86,10 @@ describe("rounds", () => {
     expect(data.rounds[0]!.status).toBe("scored");
     expect(data.rounds[0]!.winnerId).toBe("ana");
     expect(data.players.find((p) => p.id === "ana")!.wins).toBe(1);
-    // Round 1 is worth 1 point, plus the precision bonus for a perfect cut.
-    expect(data.rounds[0]!.points).toEqual({ ana: 2, bruno: 0 });
-    expect(data.players.find((p) => p.id === "ana")!.score).toBe(2);
+    // Round 1: a star is worth 1. Ana's perfect cut is three stars plus the winner's bonus.
+    const brunoError = data.cuts.find((c) => c.playerId === "bruno")!.error;
+    expect(data.rounds[0]!.points).toEqual({ ana: 4, bruno: cutPoints(1, 1, brunoError) });
+    expect(data.players.find((p) => p.id === "ana")!.score).toBe(4);
   });
 
   it("rejects double cuts, wrong rounds, tilted knives and late cuts", () => {
@@ -144,9 +146,17 @@ describe("publicView", () => {
 });
 
 describe("show rules", () => {
-  it("round N is worth N to the winner, half to second, a quarter to third", () => {
+  it("the podium bonus is N to the winner, half to second, a quarter to third", () => {
     expect([0, 1, 2, 3].map((p) => placementPoints(8, p))).toEqual([8, 4, 2, 0]);
     expect([0, 1, 2].map((p) => placementPoints(1, p))).toEqual([1, 0, 0]);
+  });
+
+  it("everyone scores by precision: up to three stars, each worth the round number", () => {
+    // Fifth place, no bonus: 3, 2, 1 or 0 stars at 4 points each.
+    expect([0.019, 0.02, 0.049, 0.05, 0.099, 0.1, 1].map((e) => cutPoints(4, 4, e))).toEqual([12, 8, 8, 4, 4, 0, 0]);
+    // The winner's bonus comes on top, whatever the cut was like.
+    expect(cutPoints(4, 0, 0.001)).toBe(16);
+    expect(cutPoints(4, 0, 0.3)).toBe(4);
   });
 
   it("opens classic, ends head-to-head, and varies in between", () => {

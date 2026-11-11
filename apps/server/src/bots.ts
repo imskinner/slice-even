@@ -68,6 +68,31 @@ export function planBotCuts(data: RoomData, round: RoundRecord, random: () => nu
     .map((p) => ({ playerId: p.id, at: round.startedAt + duration * (0.3 + 0.55 * random()) }));
 }
 
+/** Once the last person has cut, the bots still thinking wrap up within this long. */
+export const BOT_HURRY_MS = { min: 400, max: 1500 } as const;
+
+/**
+ * Nobody should sit waiting for a bot: when every person in the round has
+ * cut, bring the remaining bots' moments forward. Returns whether any moved.
+ */
+export function hurryBots(data: RoomData, now: number, random: () => number): boolean {
+  const round = data.rounds.at(-1);
+  if (!round || round.status !== "cutting" || !round.botPlans?.length) return false;
+  const waitingOnPeople = data.players.some(
+    (p) => !isBot(p) && round.participants.includes(p.id) && p.lastCutRound < round.number,
+  );
+  if (waitingOnPeople) return false;
+  let moved = false;
+  for (const plan of round.botPlans) {
+    const soon = now + BOT_HURRY_MS.min + (BOT_HURRY_MS.max - BOT_HURRY_MS.min) * random();
+    if (plan.at > soon) {
+      plan.at = soon;
+      moved = true;
+    }
+  }
+  return moved;
+}
+
 function gaussian(random: () => number): number {
   const u = Math.max(1e-9, random());
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * random());

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ruleTarget } from "@slice-even/core";
+import { precisionStars, ruleTarget } from "@slice-even/core";
 import { REVEAL, revealSchedule } from "@slice-even/server/protocol";
 import type { Cut, Player, Room, Round } from "../net/rooms.ts";
 import { rateError } from "../game.ts";
@@ -8,7 +8,7 @@ import { ResultDock, type SceneShift } from "../ui/ResultDock.tsx";
 import { Avatar, displayName, rankPlayers, seatColor } from "./players.tsx";
 import { ReactionBar } from "./Reactions.tsx";
 import { FinalScreen } from "./FinalScreen.tsx";
-import { pct, useCountdown } from "./RoomPanels.tsx";
+import { pct, Stars, useCountdown } from "./RoomPanels.tsx";
 
 /** One person's line in the list: what they did this round and where they stand. */
 interface Row {
@@ -118,7 +118,11 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 function ErrorCell({ row }: { row: Row }) {
   if (!row.inRound) return <span className="srow-err none">—</span>;
   if (!row.cut) return <span className="srow-err none">💤</span>;
-  return <span className={`srow-err ${rateError(row.cut.error).tone}`}>{pct(row.cut.error)}</span>;
+  return (
+    <span className={`srow-err ${rateError(row.cut.error).tone}`}>
+      <Stars count={precisionStars(row.cut.error)} /> {pct(row.cut.error)}
+    </span>
+  );
 }
 
 function StandingRow({
@@ -154,7 +158,6 @@ function StandingRow({
           {displayName(row.player)}
           {me ? " (você)" : ""}
         </span>
-        {mode === "game" && winner && <span className="srow-move">🏆</span>}
         {mode === "game" && moved !== 0 && (
           <span className={`srow-move ${moved > 0 ? "up" : "down"}`}>
             {moved > 0 ? "▲" : "▼"}
@@ -169,21 +172,41 @@ function StandingRow({
   );
 }
 
-/** Your cut as a bar split where the knife went, with a tick where it should have gone. */
+/**
+ * Your cut as a bar split where the knife went, with a tick where it should
+ * have gone, and where your points came from: stars at the round's value,
+ * plus any podium bonus.
+ */
 function MyCut({ row, round, count }: { row: Row; round: Round; count: number }) {
   if (!row.cut) return <div className="my-cut">Você não cortou nesta rodada 💤</div>;
   const total = row.cut.mass_front + row.cut.mass_back || 1;
   const small = Math.min(row.cut.mass_front, row.cut.mass_back) / total;
   const target = ruleTarget(round.rule);
   const rating = rateError(row.cut.error);
+  const stars = precisionStars(row.cut.error);
+  const bonus = row.points - stars * round.number;
   return (
     <div className="my-cut">
-      <div className="split-bar" aria-hidden>
-        <i style={{ width: `${small * 100}%` }} />
-        <i />
-        <span className="tick" style={{ left: `${Math.min(target, 1 - target) * 100}%` }} />
+      <div className="split">
+        <span>{pct(small)}</span>
+        <div className="split-bar" aria-hidden>
+          <i style={{ width: `${small * 100}%` }} />
+          <i />
+          <span className="tick" style={{ left: `${Math.min(target, 1 - target) * 100}%` }} />
+        </div>
+        <span>{pct(1 - small)}</span>
       </div>
-      <b>{rating.label}</b> · {pct(small)} / {pct(1 - small)} · erro <b>{pct(row.cut.error)}</b> · <b>{row.place}º</b> de {count}
+      <b>{rating.label}</b> · erro <b>{pct(row.cut.error)}</b> · <b>{row.place}º</b> de {count} ·{" "}
+      <span title="Estrelas × valor da rodada, mais o bônus de pódio">
+        <b>+{row.points}</b>
+        {row.points > 0 && (
+          <>
+            {" "}
+            ({stars}★×{round.number}
+            {bonus > 0 ? ` +${bonus}` : ""})
+          </>
+        )}
+      </span>
     </div>
   );
 }
@@ -291,7 +314,7 @@ export function RoundResults({
           {done && !finished && (
             <div className="actions">
               <span className="stats">
-                Próxima rodada em <b>{nextIn}s</b> · vale {round.number + 1} pontos
+                Próxima rodada em <b>{nextIn}s</b> · ★ vale {round.number + 1}
               </span>
               {isHost && (
                 <button className="btn btn-small btn-yellow" onClick={onNext}>

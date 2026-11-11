@@ -122,12 +122,14 @@ export function DailyGame({ onExit, onPractice }: { onExit(): void; onPractice()
         {error && <div className="toast error">{error}</div>}
         {!daily && !error && <div className="hint">Carregando o desafio…</div>}
         {daily && !outcome && (
-          <div className="round-status">
-            <div className="rule-chip">
-              🗓️ <b>Uma tentativa só!</b> Todo mundo corta este mesmo item hoje.
+          <>
+            <div className="round-bar">
+              <div className="rule-chip">
+                🗓️ <b>Uma tentativa só!</b> Todo mundo corta este mesmo item hoje.
+              </div>
             </div>
             <ControlsHint />
-          </div>
+          </>
         )}
         {outcome && (daily?.mine ? <DailyResult daily={daily} onPractice={onPractice} onShift={setShift} /> : submitting && <div className="hint">Pesando…</div>)}
       </div>

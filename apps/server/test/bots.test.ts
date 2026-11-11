@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { addBot, BOT_SKILL, fillPublicTable, planBotCuts, PUBLIC_TABLE_SIZE, removeBot, runDueBots } from "../src/bots.ts";
-import { createRoomData, join, nextAlarm, PUBLIC_COUNTDOWN_MS, startRound } from "../src/room.ts";
+import {
+  addBot,
+  BOT_HURRY_MS,
+  BOT_SKILL,
+  fillPublicTable,
+  hurryBots,
+  planBotCuts,
+  PUBLIC_TABLE_SIZE,
+  removeBot,
+  runDueBots,
+} from "../src/bots.ts";
+import { createRoomData, join, nextAlarm, PUBLIC_COUNTDOWN_MS, startRound, submitCut } from "../src/room.ts";
 
 const T0 = 1_700_000_000_000;
 
@@ -24,6 +34,35 @@ describe("bots", () => {
     expect(bot.bot).toEqual({ level: "hard" });
     removeBot(data, "ana", bot.id);
     expect(data.players).toHaveLength(2);
+  });
+
+  it("stop making people wait: once every person has cut, they cut within moments", () => {
+    const random = seeded(3);
+    const data = createRoomData("ABCDE", 3, T0);
+    join(data, "ana", "t", "Ana", T0);
+    join(data, "bia", "t", "Bia", T0);
+    addBot(data, "ana", "easy", T0, random);
+    addBot(data, "ana", "hard", T0, random);
+    const round = startRound(data, "ana", T0, "seed", random);
+    planBotCuts(data, round, random);
+    const planned = round.botPlans.map((p) => p.at);
+    const plane = { point: [0, 0, 0], normal: [1, 0, 0] };
+
+    // Bia is still aiming: the bots keep their own pace.
+    submitCut(data, "ana", 1, plane, T0 + 1000);
+    expect(hurryBots(data, T0 + 1000, random)).toBe(false);
+    expect(round.botPlans.map((p) => p.at)).toEqual(planned);
+
+    submitCut(data, "bia", 1, plane, T0 + 2000);
+    expect(hurryBots(data, T0 + 2000, random)).toBe(true);
+    for (const plan of round.botPlans) {
+      expect(plan.at).toBeGreaterThanOrEqual(T0 + 2000 + BOT_HURRY_MS.min);
+      expect(plan.at).toBeLessThanOrEqual(T0 + 2000 + BOT_HURRY_MS.max);
+    }
+    expect(nextAlarm(data)).toBeLessThanOrEqual(T0 + 2000 + BOT_HURRY_MS.max);
+
+    runDueBots(data, T0 + 2000 + BOT_HURRY_MS.max, random);
+    expect(round.status).toBe("scored");
   });
 
   it("cut on their own during the round, close it, and hit near their skill", () => {

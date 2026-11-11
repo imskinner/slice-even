@@ -8,6 +8,16 @@ import "./room.css";
 
 export const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
+/** Precision stars out of three (see precisionStars in core): the earned ones lit, the rest dim. */
+export function Stars({ count }: { count: number }) {
+  return (
+    <span className="stars" aria-label={`${count} de 3 estrelas`}>
+      {"★".repeat(count)}
+      <i>{"★".repeat(3 - count)}</i>
+    </span>
+  );
+}
+
 /** The server deadline includes 2 s of slack for latency; players see the real limit. */
 const DEADLINE_SLACK_MS = 2000;
 
@@ -63,9 +73,11 @@ export function Lobby({
         {players.map((p) => (
           <li key={p.user_id} className="player">
             <Avatar player={p} color={seatColor(players, p.user_id)} />
-            {p.user_id === room.host_id ? "👑 " : ""}
-            {displayName(p)}
-            {p.user_id === userId ? " (você)" : ""}
+            <span className="player-name">
+              {p.user_id === room.host_id ? "👑 " : ""}
+              {displayName(p)}
+              {p.user_id === userId ? " (você)" : ""}
+            </span>
             {p.bot && isHost && (
               <button className="chip-x" aria-label={`Tirar ${displayName(p)}`} onClick={() => onRemoveBot(p.user_id)}>
                 ✕
@@ -84,8 +96,24 @@ export function Lobby({
           ))}
         </div>
       )}
-      <div className="stats">
-        {room.total_rounds} rodadas · <b>a rodada N vale N pontos</b> · cada rodada tem uma regra surpresa
+      <div className="scoring">
+        <div>
+          {room.total_rounds} rodadas, cada uma com uma regra surpresa. Todo corte pontua pela precisão:
+        </div>
+        <div className="scoring-stars">
+          <span>
+            <Stars count={3} /> erro abaixo de 2%
+          </span>
+          <span>
+            <Stars count={2} /> abaixo de 5%
+          </span>
+          <span>
+            <Stars count={1} /> abaixo de 10%
+          </span>
+        </div>
+        <div>
+          <b>Na rodada N cada ★ vale N pontos</b>, e o pódio da rodada leva um bônus.
+        </div>
       </div>
       <div className="actions">
         {isHost ? (
@@ -116,7 +144,7 @@ export function RuleCard({ round, total }: { round: Round; total: number }) {
   return (
     <div className="rule-card panel">
       <div className="rule-round">
-        Rodada {round.number}/{total} · vale {round.number} {round.number === 1 ? "ponto" : "pontos"}
+        Rodada {round.number}/{total} · cada ★ vale {round.number} {round.number === 1 ? "ponto" : "pontos"}
         {round.number === total ? " · FINAL!" : ""}
       </div>
       <div className="rule-emoji">{info.emoji}</div>

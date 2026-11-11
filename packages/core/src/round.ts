@@ -68,3 +68,12 @@ export function cutError(result: CutResult, target = 0.5): number {
 export function objectSeed(roundSeed: string, userId: string, rule: RoundRule): string {
   return rule.type === "twin" ? `${roundSeed}:twin` : playerSeed(roundSeed, userId);
 }
+
+/**
+ * Precision stars for a cut, by its error: three under 2%, two under 5%,
+ * one under 10%. In a game every star is worth the round's number in
+ * points, so everybody scores by how well they cut, not only the podium.
+ */
+export function precisionStars(error: number): 0 | 1 | 2 | 3 {
+  return error < 0.02 ? 3 : error < 0.05 ? 2 : error < 0.1 ? 1 : 0;
+}

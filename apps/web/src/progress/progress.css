@@ -9,9 +9,13 @@
     padding-bottom: 66px;
   }
 
-  body .hud > .hint,
-  body .round-status > .hint {
-    margin-inline: 50px;
+  body .hud > .hint {
+    margin-inline: 56px;
+  }
+
+  /* The last achievement clears the sound button. */
+  body .records {
+    padding-bottom: 72px;
   }
 
   body .touch-controls {

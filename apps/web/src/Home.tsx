@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { multiplayerConfigured } from "./net/rooms.ts";
 import { HomeBackground } from "./home/HomeBackground.tsx";
+import { isTouchDevice } from "./ui/TouchControls.tsx";
 
 const NAME_KEY = "slice-even:name";
 
@@ -116,7 +117,8 @@ export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice, o
                     onQuickPlay(trimmed);
                   }}
                 >
-                  ⚡ Jogar rápido com quem estiver online
+                  ⚡ Jogar rápido
+                  <small>com quem estiver online</small>
                 </button>
 
                 <div className="divider">ou entre numa sala</div>
@@ -157,7 +159,7 @@ export function Home({ initialCode, busy, error, onCreate, onJoin, onPractice, o
           <button className="btn btn-small" onClick={onRecords}>
             🏅 Recordes e conquistas
           </button>
-          <div className="home-hint">Passe o mouse rápido pelas frutas para fatiar!</div>
+          <div className="home-hint">Passe o {isTouchDevice() ? "dedo" : "mouse"} rápido pelas frutas para fatiar!</div>
         </div>
       </div>
     </>

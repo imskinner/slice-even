@@ -15,7 +15,7 @@ import {
   submitCut,
   type RoomData,
 } from "./room.ts";
-import { addBot, fillPublicTable, planBotCuts, removeBot, runDueBots, type BotLevel } from "./bots.ts";
+import { addBot, fillPublicTable, hurryBots, planBotCuts, removeBot, runDueBots, type BotLevel } from "./bots.ts";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
@@ -159,6 +159,8 @@ export class Room extends DurableObject<Env> {
           try {
             const score = submitCut(this.data, attachment.playerId, Number(msg.round), msg.plane, now);
             this.send(ws, { type: "cutResult", requestId: msg.requestId, score });
+            // That may have been the last person: the bots stop making everyone wait.
+            hurryBots(this.data, now, Math.random);
           } catch (e) {
             if (!(e instanceof RoomError)) throw e;
             this.send(ws, { type: "error", requestId: msg.requestId, message: e.message });

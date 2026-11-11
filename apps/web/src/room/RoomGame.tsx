@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   generateObject,
   objectSeed,
-  ruleTarget,
   type AnyGeneratedObject,
   type CutResult,
   type Plane,
@@ -12,8 +11,10 @@ import { SliceStage } from "../scene/SliceStage.tsx";
 import {
   appearanceFor,
   BLIND_AFTER_MS,
-  evaluateCut,
+  evaluateRuleCut,
+  objectMass,
   objectSpan,
+  stageRule,
   pickKind,
   randomSeed,
   type CutOutcome,
@@ -85,6 +86,8 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
     [liveKind, liveSeed],
   );
   const showcase = useShowcase(!!state && !lastRound);
+  // "Grams" rounds tell the player what their object weighs.
+  const mass = useMemo(() => (roundObject ? objectMass(roundObject) : undefined), [roundObject]);
   const span = useMemo(() => {
     const shown = roundObject ?? showcase?.object;
     return shown ? objectSpan(shown) : undefined;
@@ -178,8 +181,8 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
         )}
         {room.status !== "lobby" && round?.status === "cutting" && (
           <>
-            <RuleCard key={round.id} round={round} total={room.total_rounds} />
-            <RoundStatus round={round} players={players} userId={userId} cuts={cuts} />
+            <RuleCard key={round.id} round={round} total={room.total_rounds} mass={mass} />
+            <RoundStatus round={round} players={players} userId={userId} cuts={cuts} mass={mass} />
           </>
         )}
         {round?.status === "scored" && (
@@ -225,22 +228,22 @@ function RoundScene({
   object: AnyGeneratedObject;
   userId: string;
   players: Player[];
-  cuts: { round_id: string; user_id: string; plane: Plane }[];
-  cut(round: number, plane: Plane): Promise<CutResult>;
+  cuts: { round_id: string; user_id: string; plane: Plane; plane2?: Plane }[];
+  cut(round: number, plane: Plane, plane2?: Plane): Promise<CutResult>;
   sendAim(x: number, z: number, angle: number): void;
   ghosts: React.RefObject<Map<string, Ghost>>;
   onError(message: string | null): void;
 }) {
   const seed = objectSeed(round.seed, userId, round.rule);
-  const target = ruleTarget(round.rule);
   const look = useMemo(() => appearanceFor(seed), [seed]);
+  const stage = useMemo(() => stageRule(round.rule, seed), [round.rule, seed]);
   const [local, setLocal] = useState<CutOutcome | null>(null);
 
-  // After a reload the cut only exists on the server; rebuild the halves from it.
-  const savedPlane = cuts.find((c) => c.round_id === round.id && c.user_id === userId)?.plane;
+  // After a reload the cut only exists on the server; rebuild the pieces from it.
+  const saved = cuts.find((c) => c.round_id === round.id && c.user_id === userId);
   const outcome = useMemo(
-    () => local ?? (savedPlane ? evaluateCut(object, savedPlane, target) : null),
-    [local, savedPlane, object, target],
+    () => local ?? (saved ? evaluateRuleCut(object, round.rule, saved.plane, saved.plane2) : null),
+    [local, saved, object, round.rule],
   );
 
   const timeUp = useDeadlinePassed(round);
@@ -301,15 +304,15 @@ function RoundScene({
   const leaving = useAfter(round.next_start_at ? new Date(round.next_start_at).getTime() - SWEEP_MS : null);
 
   const handleCut = useCallback(
-    (plane: Plane) => {
-      setLocal(evaluateCut(object, plane, target));
+    (plane: Plane, plane2?: Plane) => {
+      setLocal(evaluateRuleCut(object, round.rule, plane, plane2));
       onError(null);
-      cut(round.number, plane).then(
+      cut(round.number, plane, plane2).then(
         (score) => recordCut({ kind: round.kind, error: score.error, rule: round.rule }),
         (e: Error) => onError(e.message),
       );
     },
-    [object, target, round.number, round.kind, round.rule, cut, onError],
+    [object, round.number, round.kind, round.rule, cut, onError],
   );
 
   return (
@@ -326,6 +329,8 @@ function RoundScene({
       onAim={round.status === "cutting" ? aim : undefined}
       ghosts={round.status === "cutting" ? { positions: ghosts, players: ghostPlayers } : undefined}
       leaving={leaving}
+      spin={stage.spin}
+      cuts={stage.cuts}
     />
   );
 }

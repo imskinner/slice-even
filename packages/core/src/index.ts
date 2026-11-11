@@ -73,5 +73,7 @@ export {
   cutError,
   objectSeed,
   precisionStars,
+  gramsGoal,
+  scoreThirds,
   type RoundRule,
 } from "./round.ts";

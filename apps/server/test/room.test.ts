@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { findBisectingPlane, findPlaneAtFraction, generateObject, objectSeed } from "@slice-even/core";
+import {
+  findBisectingPlane,
+  findPlaneAtFraction,
+  generateObject,
+  gramsGoal,
+  meshVolume,
+  objectSeed,
+} from "@slice-even/core";
 import {
   createRoomData,
   cutPoints,
@@ -157,6 +164,8 @@ describe("show rules", () => {
     // The winner's bonus comes on top, whatever the cut was like.
     expect(cutPoints(4, 0, 0.001)).toBe(16);
     expect(cutPoints(4, 0, 0.3)).toBe(4);
+    // A miss earns nothing, even from third place at a table of three.
+    expect(cutPoints(4, 2, 1)).toBe(0);
   });
 
   it("opens classic, ends head-to-head, and varies in between", () => {
@@ -166,7 +175,7 @@ describe("show rules", () => {
     let x = 0;
     const sweep = () => (x = (x + 0.137) % 1);
     for (let i = 0; i < 200; i++) seen.add(pickRule(3, 5, sweep).type);
-    expect([...seen].sort()).toEqual(["blind", "blitz", "classic", "target", "twin"]);
+    expect([...seen].sort()).toEqual(["blind", "blitz", "classic", "grams", "spin", "target", "thirds", "twin"]);
   });
 
   it("twin rounds give everyone the same object", () => {
@@ -203,8 +212,8 @@ describe("show rules", () => {
     const data = lobby();
     startRound(data, "ana", T0, "s", fixed);
     for (const id of ["ana", "bruno"]) submitCut(data, id, 1, { point: [0, 0, 0], normal: [1, 0, 0] }, T0);
-    // 0.6 lands on the blitz slice of the roulette (weights 3/3/1.5/1.5/2).
-    const second = startRound(data, "ana", T0 + 5000, "s2", () => 0.6);
+    // 0.4 lands on the blitz slice of the roulette (classic 3, target 3, blitz 1.5, ... of 16).
+    const second = startRound(data, "ana", T0 + 5000, "s2", () => 0.4);
     expect(second.rule.type).toBe("blitz");
     expect(second.deadline - second.startedAt).toBe(LIMITS.blitzSeconds * 1000 + LIMITS.graceMs);
   });
@@ -263,5 +272,48 @@ describe("rematch", () => {
     rematch(data, "carla", T0 + 100, new Set(["bruno", "carla"]));
     expect(data.players.map((p) => p.id)).toEqual(["bruno", "carla"]);
     expect(data.hostId).toBe("carla");
+  });
+});
+
+describe("new rules", () => {
+  it("spin rounds only use long objects", () => {
+    // 0.75 lands on the spin slice (after classic, target, blitz, blind, twin, grams: 13 of 16).
+    for (const pick of [0.82, 0.85, 0.88]) {
+      const data = lobby();
+      startRound(data, "ana", T0, "s1", fixed);
+      for (const id of ["ana", "bruno"]) submitCut(data, id, 1, { point: [0, 0, 0], normal: [1, 0, 0] }, T0);
+      const round = startRound(data, "ana", T0 + 5000, "s2", () => pick);
+      expect(round.rule.type).toBe("spin");
+      expect(["banana", "carrot", "cucumber", "bread"]).toContain(round.kind);
+    }
+  });
+
+  it("grams rounds score against the rounded weight the player was shown", () => {
+    const data = lobby(["solo"]);
+    const round = startRound(data, "solo", T0, "s", fixed);
+    round.rule = { type: "grams", share: 0.3 };
+    const object = generateObject(round.kind, objectSeed(round.seed, "solo", round.rule));
+    const mass = meshVolume(object.mesh) * object.density;
+    const goal = gramsGoal(0.3, mass);
+    const plane = findPlaneAtFraction(object.mesh, [1, 0, 0], goal / mass);
+    const score = submitCut(data, "solo", 1, plane, T0);
+    expect(score.error).toBeLessThan(1e-6);
+    expect(Math.min(score.massFront, score.massBack)).toBeCloseTo(goal, 3);
+  });
+
+  it("thirds rounds take two parallel cuts and keep both", () => {
+    const data = lobby(["solo"]);
+    const round = startRound(data, "solo", T0, "s", fixed);
+    round.rule = { type: "thirds" };
+    const object = generateObject(round.kind, objectSeed(round.seed, "solo", round.rule));
+    const a = findPlaneAtFraction(object.mesh, [1, 0, 0], 1 / 3);
+    const b = findPlaneAtFraction(object.mesh, [1, 0, 0], 2 / 3);
+    expect(() => submitCut(data, "solo", 1, a, T0)).toThrow(/inválido/);
+    expect(() => submitCut(data, "solo", 1, a, T0, { point: [0, 0, 0], normal: [0, 0, 1] })).toThrow(/paralelos/);
+    const score = submitCut(data, "solo", 1, a, T0, b);
+    expect(score.error).toBeLessThan(1e-6);
+    const view = publicView(data, "solo", new Set()).cuts[0]!;
+    expect(view.plane2).toEqual(b);
+    expect(view.mass_mid).toBeCloseTo(score.massMid!, 9);
   });
 });

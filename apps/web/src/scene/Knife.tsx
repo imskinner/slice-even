@@ -15,7 +15,12 @@ interface KnifeProps {
   lift: number;
   /** False once the cut has happened. */
   active: boolean;
-  onCut(plane: Plane): void;
+  /** `second` is the second cut of a two-cut round. */
+  onCut(plane: Plane, second?: Plane): void;
+  /** Two cuts ("thirds" rounds): after the first the angle locks, so the second is parallel. */
+  cuts?: 1 | 2;
+  /** The first of two cuts has landed. */
+  onFirstCut?(plane: Plane): void;
   /** Called with the knife position whenever it moves while aiming (multiplayer ghosts). */
   onAim?(x: number, z: number, angle: number): void;
 }
@@ -85,7 +90,7 @@ function bladeGeometry(height: number, cleaver: boolean): THREE.BufferGeometry {
  * the cut) and the TouchControls buttons turn it and cut.
  * Coordinates are the parent group's (the apple's) local space.
  */
-export function Knife({ top, bottom, center, lift, active, onCut, onAim }: KnifeProps) {
+export function Knife({ top, bottom, center, lift, active, onCut, onAim, cuts = 1, onFirstCut }: KnifeProps) {
   const lastAim = useRef({ x: NaN, z: NaN, angle: NaN });
   // The chosen cosmetic knife (Records screen); read once per round.
   const [skin] = useState(selectedSkin);
@@ -109,6 +114,8 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim }: Knife
     fired: false,
     /** Seconds left of the pause as the blade bites; -1 once it has happened. */
     bite: 0,
+    /** The first of two cuts, once made: from then on the angle is locked. */
+    first: null as Plane | null,
   }).current;
 
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
@@ -126,6 +133,7 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim }: Knife
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      if (s.first) return;
       s.angle += e.deltaY * (s.precise ? 0.0003 : 0.0015);
     };
     const onPointerDown = (e: PointerEvent) => {
@@ -142,7 +150,7 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim }: Knife
       if (e.pointerType === "touch" && e.isPrimary) s.fingerDown = false;
     };
     const onTurn = (e: Event) => {
-      s.angle += (e as CustomEvent<number>).detail;
+      if (!s.first) s.angle += (e as CustomEvent<number>).detail;
     };
     window.dispatchEvent(new CustomEvent(KNIFE_STATE, { detail: true }));
     const onKeyDown = (e: KeyboardEvent) => {
@@ -165,10 +173,10 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim }: Knife
           s.z += Math.sin(s.angle) * step;
           break;
         case "KeyQ":
-          s.angle -= turn;
+          if (!s.first) s.angle -= turn;
           break;
         case "KeyE":
-          s.angle += turn;
+          if (!s.first) s.angle += turn;
           break;
       }
     };
@@ -229,10 +237,20 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim }: Knife
         } else if (s.bite <= 0 && before >= contact) s.bite = -1;
       }
       if (s.drop === 1) {
-        s.fired = true;
         haptic(22);
         window.dispatchEvent(new Event(SCENE_KICK));
-        onCut({ point: [s.x, center, s.z], normal: [Math.cos(s.angle), 0, Math.sin(s.angle)] });
+        const plane: Plane = { point: [s.x, center, s.z], normal: [Math.cos(s.angle), 0, Math.sin(s.angle)] };
+        if (cuts === 2 && !s.first) {
+          // One down: back up to aim the second, at the same angle.
+          s.first = plane;
+          s.drop = -1;
+          s.bite = 0;
+          onFirstCut?.(plane);
+        } else {
+          s.fired = true;
+          if (s.first) onCut(s.first, plane);
+          else onCut(plane);
+        }
       }
     } else if (s.fired) {
       s.drop = Math.max(0, s.drop - dt / RAISE_SECONDS);

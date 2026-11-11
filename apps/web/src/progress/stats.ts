@@ -18,6 +18,8 @@ export interface Stats {
   steadyStreak: number;
   roundsWon: number;
   gamesWon: number;
+  /** Best survival run: the level reached and the stars collected on the way. */
+  survival?: { level: number; stars: number };
   /** Achievement id -> when it was unlocked (ms). */
   achievements: Record<string, number>;
 }
@@ -42,6 +44,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "champion", emoji: "👑", title: "Campeão", description: "Vença uma partida no multiplayer." },
   { id: "regular", emoji: "🗓️", title: "Freguês", description: "Jogue o desafio do dia 7 dias seguidos." },
   { id: "cook", emoji: "👨‍🍳", title: "Cozinheiro", description: "Faça 100 cortes." },
+  { id: "survivor", emoji: "❤️", title: "Sobrevivente", description: "Chegue ao nível 10 na sobrevivência." },
 ];
 
 /** Under this error a kind counts as "golden" in the collection. */
@@ -132,4 +135,15 @@ export function recordDailyStreak(days: number) {
   const stats = loadStats();
   unlock(stats, ["regular"]);
   save(stats);
+}
+
+/** Books a finished survival run. Returns whether it beat your best (further, or as far with more stars). */
+export function recordSurvival(level: number, stars: number): boolean {
+  const stats = loadStats();
+  const best = stats.survival;
+  const better = !best || level > best.level || (level === best.level && stars > best.stars);
+  if (better) stats.survival = { level, stars };
+  if (level >= 10) unlock(stats, ["survivor"]);
+  save(stats);
+  return better && !!best;
 }

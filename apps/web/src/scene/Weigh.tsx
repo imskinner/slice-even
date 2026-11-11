@@ -13,7 +13,6 @@ const SPLIT_SECONDS = 0.6;
 const SLIDE = 0.8;
 const TIP = 0.45;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
-const IDENTITY = new THREE.Quaternion();
 
 /**
  * The balance: a see-saw beam on a short post with a plate on each end,
@@ -52,6 +51,12 @@ interface HalvesProps {
   /** The cut's masses; with `weigh` the halves go on the balance and it tips. */
   score: CutResult;
   weigh: boolean;
+  /**
+   * How far the object had turned when it was cut ("spin" rounds), radians
+   * about Y. The cut is in the object's own frame; the halves start out
+   * turned like the object was, and the balance stays square to the board.
+   */
+  turn?: number;
 }
 
 const easeOutBack = (t: number) => 1 + 2.7 * (t - 1) ** 3 + 1.7 * (t - 1) ** 2;
@@ -64,7 +69,7 @@ const easeInOut = (t: number) => t * t * (3 - 2 * t);
  * onto a plate (cut face to the camera) and the beam tips towards the
  * heavier one: the result, before any number is shown.
  */
-export function Halves({ geometry, plane, skin, flesh, bounds, stem, stemBase, score, weigh }: HalvesProps) {
+export function Halves({ geometry, plane, skin, flesh, bounds, stem, stemBase, score, weigh, turn = 0 }: HalvesProps) {
   const halves = useMemo(() => splitGeometry(geometry, plane, skin, flesh), [geometry, plane, skin, flesh]);
   useEffect(() => {
     for (const mesh of [halves.front, halves.back]) {
@@ -78,6 +83,7 @@ export function Halves({ geometry, plane, skin, flesh, bounds, stem, stemBase, s
   }, [halves]);
 
   const floor = bounds.min.y;
+  const turned = useMemo(() => new THREE.Quaternion().setFromAxisAngle(Y_AXIS, turn), [turn]);
   const sides = useMemo(() => {
     const n = new THREE.Vector3(...plane.normal).normalize();
     const meshes = [halves.front, halves.back];
@@ -104,20 +110,22 @@ export function Halves({ geometry, plane, skin, flesh, bounds, stem, stemBase, s
       const center = new THREE.Vector3((box.min.x + box.max.x) / 2, floor, (box.min.z + box.max.z) / 2);
       const [w, d] = [box.max.x - box.min.x, box.max.z - box.min.z];
       const long = Math.max(w, d) / Math.max(0.1, Math.min(w, d)) > 1.6;
-      const yaw = long ? 0 : -Math.atan2(-dir.x, -dir.z);
+      const yaw = long ? turn : -Math.atan2(-dir.x, -dir.z);
       return {
         dir,
+        // Where this half points on the board, turn included.
+        seen: dir.clone().applyQuaternion(turned),
         pivot,
-        splitQuat: new THREE.Quaternion().setFromAxisAngle(axis, tip),
+        splitQuat: new THREE.Quaternion().setFromAxisAngle(axis, tip).premultiply(turned),
         plateQuat: new THREE.Quaternion().setFromAxisAngle(Y_AXIS, yaw),
         center,
         mass: i === 0 ? score.massFront : score.massBack,
       };
     });
     // Whichever half is further left on screen takes the left plate, and goes first.
-    const left = list[0]!.dir.x < -1e-3 || (Math.abs(list[0]!.dir.x) <= 1e-3 && list[0]!.dir.z > 0) ? 0 : 1;
+    const left = list[0]!.seen.x < -1e-3 || (Math.abs(list[0]!.seen.x) <= 1e-3 && list[0]!.seen.z > 0) ? 0 : 1;
     return list.map((side, i) => ({ ...side, plate: i === left ? -1 : 1, start: i === left ? WEIGH.firstFlight : WEIGH.secondFlight }));
-  }, [plane, bounds, floor, halves, score]);
+  }, [plane, bounds, floor, halves, score, turn, turned]);
 
   const stemOnFront =
     (stemBase[0] - plane.point[0]) * plane.normal[0] + (stemBase[2] - plane.point[2]) * plane.normal[2] >= 0;
@@ -186,11 +194,11 @@ export function Halves({ geometry, plane, skin, flesh, bounds, stem, stemBase, s
         if (sim.landed[0] && sim.landed[1]) setTimeout(() => setSettled(true), WEIGH.labels * 1000);
       }
       const u = easeInOut(flight);
-      scratch.from.copy(side.pivot).addScaledVector(side.dir, SLIDE * split);
+      scratch.from.copy(side.pivot).addScaledVector(side.dir, SLIDE * split).applyQuaternion(turned);
       const g = outer[i]!.current;
       g.position.lerpVectors(scratch.from, scratch.plate, u);
       g.position.y += Math.sin(Math.PI * flight) * 5;
-      g.quaternion.slerpQuaternions(IDENTITY, side.splitQuat, split).slerp(side.plateQuat, u);
+      g.quaternion.slerpQuaternions(turned, side.splitQuat, split).slerp(side.plateQuat, u);
       inner[i]!.current.position.copy(scratch.offset.lerpVectors(side.pivot, side.center, u)).negate();
     });
   });

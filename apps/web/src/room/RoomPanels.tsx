@@ -135,8 +135,8 @@ export function Lobby({
 }
 
 /** Big card announcing the round's rule for a moment, then the corner chip takes over. */
-export function RuleCard({ round, total }: { round: Round; total: number }) {
-  const info = ruleInfo(round.rule);
+export function RuleCard({ round, total, mass }: { round: Round; total: number; mass?: number }) {
+  const info = ruleInfo(round.rule, mass);
   const [big, setBig] = useState(() => Date.now() - new Date(round.started_at).getTime() < 2500);
   useEffect(() => {
     if (!big) return;
@@ -165,11 +165,14 @@ export function RoundStatus({
   players,
   userId,
   cuts,
+  mass,
 }: {
   round: Round;
   players: Player[];
   userId: string;
   cuts: Cut[];
+  /** The player's own object, grams ("grams" rounds say what it weighs). */
+  mass?: number;
 }) {
   const end = new Date(round.deadline).getTime() - DEADLINE_SLACK_MS;
   const total = Math.max(1, (end - new Date(round.started_at).getTime()) / 1000);
@@ -185,7 +188,7 @@ export function RoundStatus({
   const inRound = players.filter((p) => round.participants.includes(p.user_id));
   const done = inRound.filter((p) => p.last_cut_round >= round.number).length;
   const waiting = !round.participants.includes(userId);
-  const info = ruleInfo(round.rule);
+  const info = ruleInfo(round.rule, mass);
 
   // The last seconds, for whoever still has to cut: a tone that climbs until time is up.
   const tense = remaining > 0 && remaining <= 5 && !iCut && !waiting;

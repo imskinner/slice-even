@@ -56,6 +56,9 @@ export interface Cut {
   round_id: string;
   user_id: string;
   plane: Plane;
+  /** "Thirds" rounds: the second cut, and the slice between the two (grams). */
+  plane2?: Plane;
+  mass_mid?: number;
   mass_front: number;
   mass_back: number;
   /** Distance from the round's goal (see cutError in core). */
@@ -73,7 +76,8 @@ export interface RoomState {
 export type ClientMessage =
   | { type: "join"; playerId: string; token: string; name: string }
   | { type: "start" }
-  | { type: "cut"; requestId: string; round: number; plane: unknown }
+  /** `plane2` is the second cut of a "thirds" round. */
+  | { type: "cut"; requestId: string; round: number; plane: unknown; plane2?: unknown }
   | { type: "react"; emoji: string }
   | { type: "addBot"; level: "easy" | "medium" | "hard" }
   | { type: "removeBot"; playerId: string }

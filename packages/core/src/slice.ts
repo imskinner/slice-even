@@ -110,6 +110,8 @@ export interface CutResult {
   /** Grams. */
   massFront: number;
   massBack: number;
+  /** "Thirds" rounds only: the slice between the two cuts. */
+  massMid?: number;
   /** massFront / total, 0.5 is a perfect cut. */
   fractionFront: number;
   /**

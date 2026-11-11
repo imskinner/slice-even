@@ -1,12 +1,14 @@
 import {
   cutError,
   generateObject,
+  meshVolume,
   objectSeed,
   OBJECT_KINDS,
   parseCutPlane,
   precisionStars,
   ruleTarget,
   scoreCut,
+  scoreThirds,
   type CutResult,
   type ObjectKind,
   type Plane,
@@ -61,6 +63,9 @@ export interface CutRecord {
   round: number;
   playerId: string;
   plane: Plane;
+  /** "Thirds" rounds: the second cut, and the slice between the two. */
+  plane2?: Plane;
+  massMid?: number;
   massFront: number;
   massBack: number;
   error: number;
@@ -142,6 +147,9 @@ export function join(data: RoomData, playerId: string, token: string, rawName: s
 }
 
 const TARGETS = [0.25, 0.3, 1 / 3, 0.4];
+const GRAM_SHARES = [0.2, 0.25, 0.3, 0.35, 0.4];
+/** Spinning only matters for shapes that are not round: these are the long ones. */
+const LONG_KINDS: ObjectKind[] = ["banana", "carrot", "cucumber", "bread"];
 
 /**
  * The twist for round `number`: the first is always classic so newcomers
@@ -157,12 +165,20 @@ export function pickRule(number: number, total: number, random: () => number): R
     [1.5, () => ({ type: "blitz" })],
     [1.5, () => ({ type: "blind" })],
     [2, () => ({ type: "twin" })],
+    [2, () => ({ type: "grams", share: GRAM_SHARES[Math.floor(random() * GRAM_SHARES.length)]! })],
+    [1.5, () => ({ type: "spin" })],
+    [1.5, () => ({ type: "thirds" })],
   ];
   let r = random() * roulette.reduce((s, [w]) => s + w, 0);
   for (const [w, make] of roulette) {
     if ((r -= w) < 0) return make();
   }
   return { type: "classic" };
+}
+
+function pickKind(rule: RoundRule, random: () => number): ObjectKind {
+  const kinds = rule.type === "spin" ? LONG_KINDS : OBJECT_KINDS;
+  return kinds[Math.floor(random() * kinds.length)]!;
 }
 
 /**
@@ -191,7 +207,7 @@ export function startRound(
   if (previous) previous.nextStartAt = null;
   const round: RoundRecord = {
     number,
-    kind: OBJECT_KINDS[Math.floor(random() * OBJECT_KINDS.length)]!,
+    kind: pickKind(rule, random),
     seed,
     rule,
     status: "cutting",
@@ -214,7 +230,15 @@ export function startRound(
  * Scores a cut by regenerating the player's object from the round seed, so
  * the client only ever sends a plane. Closes the round when everyone is in.
  */
-export function submitCut(data: RoomData, playerId: string, roundNumber: number, planeInput: unknown, now: number): CutResult {
+export function submitCut(
+  data: RoomData,
+  playerId: string,
+  roundNumber: number,
+  planeInput: unknown,
+  now: number,
+  /** The second cut, in "thirds" rounds. */
+  plane2Input?: unknown,
+): CutResult {
   const player = data.players.find((p) => p.id === playerId);
   if (!player) throw new RoomError("Você não está nesta sala.");
   const round = currentRound(data);
@@ -228,12 +252,26 @@ export function submitCut(data: RoomData, playerId: string, roundNumber: number,
   if ("error" in parsed) throw new RoomError(`Corte inválido: ${parsed.error}`);
 
   const object = generateObject(round.kind, objectSeed(round.seed, playerId, round.rule));
-  const raw = scoreCut(object.mesh, parsed.plane, object.density);
-  const score: CutResult = { ...raw, error: cutError(raw, ruleTarget(round.rule)) };
+  let score: CutResult;
+  let plane2: Plane | undefined;
+  if (round.rule.type === "thirds") {
+    const second = parseCutPlane(plane2Input);
+    if ("error" in second) throw new RoomError(`Corte inválido: ${second.error}`);
+    const thirds = scoreThirds(object.mesh, parsed.plane, second.plane, object.density);
+    if (!thirds) throw new RoomError("Os dois cortes precisam ser paralelos.");
+    score = thirds;
+    plane2 = second.plane;
+  } else {
+    const raw = scoreCut(object.mesh, parsed.plane, object.density);
+    const mass = meshVolume(object.mesh) * object.density;
+    score = { ...raw, error: cutError(raw, ruleTarget(round.rule, mass)) };
+  }
   data.cuts.push({
     round: round.number,
     playerId,
     plane: parsed.plane,
+    plane2,
+    massMid: score.massMid,
     massFront: score.massFront,
     massBack: score.massBack,
     error: score.error,
@@ -253,8 +291,13 @@ export function placementPoints(roundNumber: number, place: number): number {
   return place > 2 ? 0 : Math.floor(roundNumber / 2 ** place);
 }
 
-/** What a cut earns: its precision stars at the round's value, plus the podium bonus. */
+/**
+ * What a cut earns: its precision stars at the round's value, plus the
+ * podium bonus. A miss (error 1) earns nothing, even if a small table
+ * leaves it on the podium.
+ */
 export function cutPoints(roundNumber: number, place: number, error: number): number {
+  if (error >= 1) return 0;
   return roundNumber * precisionStars(error) + placementPoints(roundNumber, place);
 }
 
@@ -380,6 +423,8 @@ export function publicView(data: RoomData, viewerId: string, online: ReadonlySet
         round_id: roundId(c.round),
         user_id: c.playerId,
         plane: c.plane,
+        plane2: c.plane2,
+        mass_mid: c.massMid,
         mass_front: c.massFront,
         mass_back: c.massBack,
         error: c.error,

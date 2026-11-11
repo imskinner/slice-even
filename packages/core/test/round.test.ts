@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseCutPlane, playerSeed } from "../src/round.ts";
+import { gramsGoal, parseCutPlane, playerSeed, ruleTarget, scoreThirds } from "../src/round.ts";
+import { generateObject } from "../src/generators/index.ts";
+import { findPlaneAtFraction } from "../src/slice.ts";
+import { meshVolume } from "../src/mesh.ts";
 
 describe("playerSeed", () => {
   it("differs per player and per round", () => {
@@ -45,5 +48,46 @@ describe("cutError and fraction planes", () => {
       const plane = findPlaneAtFraction(apple.mesh, [1, 0, 0], f);
       expect(scoreCut(apple.mesh, plane, apple.density).fractionFront).toBeCloseTo(f, 9);
     }
+  });
+});
+
+describe("new rules", () => {
+  const object = generateObject("bread", "rules");
+  const mass = meshVolume(object.mesh) * object.density;
+
+  it("grams rounds ask for a round number of grams and score against that", () => {
+    const goal = gramsGoal(0.3, mass);
+    expect(goal % 5).toBe(0);
+    expect(Math.abs(goal - 0.3 * mass)).toBeLessThanOrEqual(2.5);
+    expect(ruleTarget({ type: "grams", share: 0.3 }, mass)).toBeCloseTo(goal / mass, 12);
+    // Without the object's mass, the unrounded share.
+    expect(ruleTarget({ type: "grams", share: 0.3 })).toBe(0.3);
+    expect(ruleTarget({ type: "spin" })).toBe(0.5);
+  });
+
+  it("thirds: two parallel cuts at one and two thirds are perfect, in either order", () => {
+    const a = findPlaneAtFraction(object.mesh, [1, 0, 0], 2 / 3);
+    const b = findPlaneAtFraction(object.mesh, [1, 0, 0], 1 / 3);
+    for (const [first, second] of [[a, b], [b, a]] as const) {
+      const result = scoreThirds(object.mesh, first, second, object.density)!;
+      expect(result.error).toBeLessThan(1e-6);
+      expect(result.massMid).toBeCloseTo(mass / 3, 3);
+      expect(result.massFront + result.massBack + result.massMid!).toBeCloseTo(mass, 6);
+    }
+  });
+
+  it("thirds: an uneven slice is twice its distance from a third; misses and crossed cuts fail", () => {
+    const a = findPlaneAtFraction(object.mesh, [1, 0, 0], 0.5);
+    const b = findPlaneAtFraction(object.mesh, [1, 0, 0], 0.25);
+    const result = scoreThirds(object.mesh, a, b, object.density);
+    // Pieces of 25%, 25% and 50%: the worst is 1/6 off.
+    expect(result!.error).toBeCloseTo(1 / 3, 4);
+
+    const same = scoreThirds(object.mesh, a, a, object.density);
+    expect(same!.error).toBe(1);
+    const missed = scoreThirds(object.mesh, a, { point: [29, 0, 0], normal: [1, 0, 0] }, object.density);
+    expect(missed!.error).toBe(1);
+    const crossed = scoreThirds(object.mesh, a, { point: [0, 0, 0], normal: [0, 0, 1] }, object.density);
+    expect(crossed).toBeNull();
   });
 });

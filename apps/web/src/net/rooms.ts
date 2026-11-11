@@ -232,12 +232,12 @@ export function useRoom(code: string, name: string) {
 
   /** The server regenerates the object from the seed and scores the plane. */
   const cut = useCallback(
-    (round: number, plane: Plane) =>
+    (round: number, plane: Plane, plane2?: Plane) =>
       new Promise<CutResult>((resolve, reject) => {
         const requestId = crypto.randomUUID();
         pending.current.set(requestId, { resolve, reject });
         try {
-          send({ type: "cut", requestId, round, plane });
+          send({ type: "cut", requestId, round, plane, plane2 });
         } catch (e) {
           pending.current.delete(requestId);
           reject(e as Error);

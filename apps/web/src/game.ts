@@ -2,10 +2,14 @@ import {
   createRng,
   cutError,
   findPlaneAtFraction,
+  gramsGoal,
   meshBounds,
+  meshVolume,
   OBJECT_KINDS,
   type ObjectKind,
+  ruleTarget,
   scoreCut,
+  scoreThirds,
   type CutResult,
   type GeneratedObject,
   type Plane,
@@ -17,8 +21,11 @@ export interface CutOutcome {
   /** Plane with the same direction that would have met the goal exactly. */
   ideal: Plane;
   score: CutResult;
-  /** Signed distance from the ideal plane along the cut normal, cm. */
+  /** Signed distance from the ideal plane along the cut normal, cm (the worse of the two in "thirds" rounds). */
   offsetFromIdeal: number;
+  /** "Thirds" rounds: the second cut and the second ideal cut. */
+  plane2?: Plane;
+  ideal2?: Plane;
 }
 
 /** Same math the scoring server will run. */
@@ -49,8 +56,23 @@ export interface RuleInfo {
 
 const pctLabel = (f: number) => `${Math.round(f * 100)}%`;
 
-export function ruleInfo(rule: RoundRule): RuleInfo {
+const gramsLabel = (g: number) => `${Math.round(g).toLocaleString("pt-BR")} g`;
+
+/** `mass` is the player's own object, grams: "grams" rounds tell them what it weighs. */
+export function ruleInfo(rule: RoundRule, mass?: number): RuleInfo {
   switch (rule.type) {
+    case "grams":
+      return mass
+        ? {
+            emoji: "🏷️",
+            title: `Peso exato: ${gramsLabel(gramsGoal(rule.share, mass))}`,
+            goal: `Este item pesa ${gramsLabel(mass)}. Corte um pedaço de ${gramsLabel(gramsGoal(rule.share, mass))}.`,
+          }
+        : { emoji: "🏷️", title: "Peso exato", goal: "Corte um pedaço com o peso pedido." };
+    case "spin":
+      return { emoji: "🌀", title: "Tábua giratória", goal: "O item gira: corte na hora certa." };
+    case "thirds":
+      return { emoji: "✌️", title: "Três fatias", goal: "Dois cortes, três pedaços iguais." };
     case "classic":
       return { emoji: "⚖️", title: "Clássica", goal: "Corte exatamente no meio." };
     case "target":
@@ -67,6 +89,61 @@ export function ruleInfo(rule: RoundRule): RuleInfo {
       return { emoji: "👯", title: "Mesma fruta", goal: "Todos cortam o mesmo item. Comparação direta!" };
   }
 }
+
+/** The object's weight, grams. */
+export function objectMass(object: GeneratedObject): number {
+  return meshVolume(object.mesh) * object.density;
+}
+
+/** Scores a "thirds" round: two parallel cuts, with the two ideal cuts for comparison. */
+export function evaluateThirds(object: GeneratedObject, first: Plane, second: Plane): CutOutcome {
+  const score = scoreThirds(object.mesh, first, second, object.density) ?? {
+    massFront: 0,
+    massBack: 0,
+    massMid: 0,
+    fractionFront: 0,
+    error: 1,
+  };
+  const n = first.normal;
+  const len = Math.hypot(...n);
+  const along = (p: Plane) => (p.point[0] * n[0] + p.point[1] * n[1] + p.point[2] * n[2]) / len;
+  // A third of the mass in front of the upper ideal cut, two thirds in front of the lower.
+  const ideal = findPlaneAtFraction(object.mesh, n, 2 / 3);
+  const ideal2 = findPlaneAtFraction(object.mesh, n, 1 / 3);
+  const mine = [along(first), along(second)].sort((a, b) => a - b);
+  const wanted = [along(ideal), along(ideal2)].sort((a, b) => a - b);
+  const offsets = [mine[0]! - wanted[0]!, mine[1]! - wanted[1]!];
+  return {
+    plane: first,
+    plane2: second,
+    ideal,
+    ideal2,
+    score,
+    offsetFromIdeal: Math.abs(offsets[0]!) > Math.abs(offsets[1]!) ? offsets[0]! : offsets[1]!,
+  };
+}
+
+/** Scores a cut under any rule (the same math the server runs). */
+export function evaluateRuleCut(object: GeneratedObject, rule: RoundRule, plane: Plane, plane2?: Plane): CutOutcome {
+  if (rule.type === "thirds") return evaluateThirds(object, plane, plane2 ?? plane);
+  return evaluateCut(object, plane, ruleTarget(rule, objectMass(object)));
+}
+
+/** Radians per second the board turns in "spin" rounds; the seed picks the direction. */
+const SPIN_SPEED = 0.85;
+
+/** What a rule changes on the board: a turning object, a second cut, a cloche. */
+export function stageRule(rule: RoundRule, seed: string): { spin?: number; cuts: 1 | 2; blind: boolean } {
+  const clockwise = createRng(`spin:${seed}`).next() < 0.5;
+  return {
+    spin: rule.type === "spin" ? (clockwise ? -SPIN_SPEED : SPIN_SPEED) : undefined,
+    cuts: rule.type === "thirds" ? 2 : 1,
+    blind: rule.type === "blind",
+  };
+}
+
+/** Shapes for which a turning board matters (it does not for an orange). */
+export const LONG_KINDS: readonly ObjectKind[] = ["banana", "carrot", "cucumber", "bread"];
 
 /** Blind rounds hide the object this long after the round starts. */
 export const BLIND_AFTER_MS = 3000;

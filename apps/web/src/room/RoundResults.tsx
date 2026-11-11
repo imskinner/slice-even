@@ -114,6 +114,7 @@ function useFlip() {
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
+const grams = (v: number) => `${Math.round(v).toLocaleString("pt-BR")} g`;
 
 function ErrorCell({ row }: { row: Row }) {
   if (!row.inRound) return <span className="srow-err none">—</span>;
@@ -175,28 +176,41 @@ function StandingRow({
 /**
  * Your cut as a bar split where the knife went, with a tick where it should
  * have gone, and where your points came from: stars at the round's value,
- * plus any podium bonus.
+ * plus any podium bonus. "Thirds" rounds show three pieces; "grams" rounds
+ * speak in grams.
  */
 function MyCut({ row, round, count }: { row: Row; round: Round; count: number }) {
   if (!row.cut) return <div className="my-cut">Você não cortou nesta rodada 💤</div>;
-  const total = row.cut.mass_front + row.cut.mass_back || 1;
-  const small = Math.min(row.cut.mass_front, row.cut.mass_back) / total;
-  const target = ruleTarget(round.rule);
-  const rating = rateError(row.cut.error);
-  const stars = precisionStars(row.cut.error);
+  const { cut } = row;
+  const thirds = cut.mass_mid !== undefined;
+  const total = cut.mass_front + cut.mass_back + (cut.mass_mid ?? 0) || 1;
+  // Left to right: the smaller side first, or the three pieces in order.
+  const small = Math.min(cut.mass_front, cut.mass_back);
+  const pieces = thirds ? [cut.mass_back, cut.mass_mid!, cut.mass_front] : [small, total - small];
+  const target = ruleTarget(round.rule, total);
+  const ticks = thirds ? [1 / 3, 2 / 3] : [Math.min(target, 1 - target)];
+  const inGrams = round.rule.type === "grams";
+  const label = (mass: number) => (inGrams ? grams(mass) : pct(mass / total));
+  const rating = rateError(cut.error);
+  const stars = precisionStars(cut.error);
   const bonus = row.points - stars * round.number;
   return (
     <div className="my-cut">
       <div className="split">
-        <span>{pct(small)}</span>
+        <span>{label(pieces[0]!)}</span>
         <div className="split-bar" aria-hidden>
-          <i style={{ width: `${small * 100}%` }} />
-          <i />
-          <span className="tick" style={{ left: `${Math.min(target, 1 - target) * 100}%` }} />
+          {pieces.map((mass, i) => (
+            <i key={i} style={{ width: `${(mass / total) * 100}%` }} />
+          ))}
+          {ticks.map((at) => (
+            <span key={at} className="tick" style={{ left: `${at * 100}%` }} />
+          ))}
         </div>
-        <span>{pct(1 - small)}</span>
+        <span>{label(pieces.at(-1)!)}</span>
       </div>
-      <b>{rating.label}</b> · erro <b>{pct(row.cut.error)}</b> · <b>{row.place}º</b> de {count} ·{" "}
+      <b>{rating.label}</b>
+      {thirds && <> · meio {pct(cut.mass_mid! / total)}</>}
+      {inGrams && <> · meta {grams(target * total)}</>} · erro <b>{pct(cut.error)}</b> · <b>{row.place}º</b> de {count} ·{" "}
       <span title="Estrelas × valor da rodada, mais o bônus de pódio">
         <b>+{row.points}</b>
         {row.points > 0 && (

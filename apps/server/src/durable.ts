@@ -157,7 +157,7 @@ export class Room extends DurableObject<Env> {
         case "cut": {
           if (!attachment.playerId) return;
           try {
-            const score = submitCut(this.data, attachment.playerId, Number(msg.round), msg.plane, now);
+            const score = submitCut(this.data, attachment.playerId, Number(msg.round), msg.plane, now, msg.plane2);
             this.send(ws, { type: "cutResult", requestId: msg.requestId, score });
             // That may have been the last person: the bots stop making everyone wait.
             hurryBots(this.data, now, Math.random);

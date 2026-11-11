@@ -9,6 +9,7 @@ import { createMaterials } from "./materials.ts";
 import { Decoration } from "./Decoration.tsx";
 import { Splash } from "./Splash.tsx";
 import { Halves } from "./Weigh.tsx";
+import { Thirds } from "./Thirds.tsx";
 import { sfx } from "../audio/sfx.ts";
 import type { CutOutcome } from "../game.ts";
 import type { Ghost } from "../net/rooms.ts";
@@ -18,7 +19,12 @@ interface SliceStageProps {
   skinColor: string;
   stemTilt: number;
   outcome: CutOutcome | null;
-  onCut(plane: Plane): void;
+  /** The cut, in the object's own frame; `second` in two-cut rounds. */
+  onCut(plane: Plane, second?: Plane): void;
+  /** The object turns on the board at this many radians per second until it is cut ("spin" rounds). */
+  spin?: number;
+  /** Two parallel cuts instead of one ("thirds" rounds). */
+  cuts?: 1 | 2;
   /** Hides the knife without a cut (round over, time up). */
   locked?: boolean;
   /**
@@ -87,6 +93,8 @@ export function SliceStage({
   ghosts,
   leaving = false,
   quiet = false,
+  spin,
+  cuts = 1,
 }: SliceStageProps) {
   const [covered, setCovered] = useState(false);
   useEffect(() => {
@@ -98,9 +106,20 @@ export function SliceStage({
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   const { skin, flesh, splash } = useMemo(() => createMaterials(object, skinColor), [object, skinColor]);
-  const handleCut = (plane: Plane) => {
+  // Spin rounds: the angle comes from the clock, not from frames drawn, so
+  // the cut lands where the player saw the object even in a throttled tab.
+  const [mounted] = useState(() => performance.now());
+  const spinAngle = () => (spin ? (spin * (performance.now() - mounted)) / 1000 : 0);
+  /** How far the object had turned when it was cut. */
+  const [turn, setTurn] = useState(0);
+  /** The first of two cuts, shown on the object until the second lands. */
+  const [first, setFirst] = useState<Plane | null>(null);
+  const handleCut = (plane: Plane, second?: Plane) => {
     sfx.cut(object.kind);
-    onCut(plane);
+    // The knife works in the board's frame; the score needs the object's.
+    const angle = spinAngle();
+    setTurn(angle);
+    onCut(turnPlane(plane, -angle), second && turnPlane(second, -angle));
   };
   useEffect(
     () => () => {
@@ -163,7 +182,10 @@ export function SliceStage({
         if (!quiet) sfx.thud();
       }
     }
-    if (whole.current) whole.current.position.y = (1 - bounce(motion.enter)) * ENTER_HEIGHT;
+    if (whole.current) {
+      whole.current.position.y = (1 - bounce(motion.enter)) * ENTER_HEIGHT;
+      whole.current.rotation.y = spinAngle();
+    }
     if (leaving && motion.leave < 1) {
       if (motion.leave === 0 && !quiet) sfx.whoosh(0.5);
       motion.leave = Math.min(1, motion.leave + dt / LEAVE_SECONDS);
@@ -174,7 +196,20 @@ export function SliceStage({
   return (
     <group position={[0, lift, 0]}>
       <group ref={root}>
-        {outcome ? (
+        {outcome?.plane2 ? (
+          <Thirds
+            geometry={geometry}
+            plane={outcome.plane}
+            plane2={outcome.plane2}
+            skin={skin}
+            flesh={flesh}
+            bounds={box}
+            stem={stem}
+            stemBase={stemBase}
+            score={outcome.score}
+            reveal={revealIdeal}
+          />
+        ) : outcome ? (
           <Halves
             geometry={geometry}
             plane={outcome.plane}
@@ -185,6 +220,7 @@ export function SliceStage({
             stemBase={stemBase}
             score={outcome.score}
             weigh={revealIdeal}
+            turn={turn}
           />
         ) : (
           <group ref={whole} position={[0, ENTER_HEIGHT, 0]}>
@@ -201,25 +237,39 @@ export function SliceStage({
             floor={box.min.y}
           />
         )}
-        {burst && (
-          <Splash
-            origin={burst.origin}
-            normal={burst.normal}
-            width={burst.width}
-            bottom={box.min.y}
-            top={box.max.y}
-            floor={box.min.y}
-            color={splash}
-            onLand={() => sfx.splat(object.kind)}
-          />
+        {/* Everything drawn on the board is in the object's frame: turn it like the object was. */}
+        <group rotation={[0, turn, 0]}>
+          {burst && (
+            <Splash
+              origin={burst.origin}
+              normal={burst.normal}
+              width={burst.width}
+              bottom={box.min.y}
+              top={box.max.y}
+              floor={box.min.y}
+              color={splash}
+              onLand={() => sfx.splat(object.kind)}
+            />
+          )}
+          {outcome && <KnifeMark plane={outcome.plane} floor={box.min.y} />}
+          {outcome?.plane2 && <KnifeMark plane={outcome.plane2} floor={box.min.y} />}
+          {outcome &&
+            revealIdeal &&
+            otherCuts.map((c, i) => (
+              <CutMark key={i} cut={c} floor={box.min.y} reach={Math.max(box.max.x - box.min.x, box.max.z - box.min.z)} />
+            ))}
+          {outcome && revealIdeal && <IdealPlane plane={outcome.ideal} height={box.max.y - box.min.y + 2} center={center} />}
+          {outcome?.ideal2 && revealIdeal && (
+            <IdealPlane plane={outcome.ideal2} height={box.max.y - box.min.y + 2} center={center} />
+          )}
+        </group>
+        {/* Two-cut rounds: where the first cut went, until the second lands. */}
+        {first && !outcome && (
+          <>
+            <KnifeMark plane={first} floor={box.min.y} />
+            <FirstCut plane={first} center={center} height={box.max.y - box.min.y + 0.6} reach={Math.max(box.max.x - box.min.x, box.max.z - box.min.z) + 1} />
+          </>
         )}
-        {outcome && <KnifeMark plane={outcome.plane} floor={box.min.y} />}
-        {outcome &&
-          revealIdeal &&
-          otherCuts.map((c, i) => (
-            <CutMark key={i} cut={c} floor={box.min.y} reach={Math.max(box.max.x - box.min.x, box.max.z - box.min.z)} />
-          ))}
-        {outcome && revealIdeal && <IdealPlane plane={outcome.ideal} height={box.max.y - box.min.y + 2} center={center} />}
       </group>
       {ghosts?.players.map((g) => (
         <GhostKnife
@@ -240,9 +290,35 @@ export function SliceStage({
           active={!outcome && landed}
           onCut={handleCut}
           onAim={onAim}
+          cuts={cuts}
+          onFirstCut={(plane) => {
+            sfx.cut(object.kind);
+            setFirst(plane);
+          }}
         />
       )}
     </group>
+  );
+}
+
+/** The same plane after the board has turned by `angle` radians about Y. */
+function turnPlane(plane: Plane, angle: number): Plane {
+  const [c, s] = [Math.cos(angle), Math.sin(angle)];
+  const turned = ([x, y, z]: readonly [number, number, number]): [number, number, number] => [x * c + z * s, y, -x * s + z * c];
+  return { point: turned(plane.point), normal: turned(plane.normal) };
+}
+
+/** The first of two cuts: a pale sheet through the object where the blade went. */
+function FirstCut({ plane, center, height, reach }: { plane: Plane; center: number; height: number; reach: number }) {
+  const quaternion = useMemo(
+    () => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(...plane.normal).normalize()),
+    [plane],
+  );
+  return (
+    <mesh position={[plane.point[0], center, plane.point[2]]} quaternion={quaternion}>
+      <planeGeometry args={[reach, height]} />
+      <meshBasicMaterial color="#ffffff" transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
+    </mesh>
   );
 }
 

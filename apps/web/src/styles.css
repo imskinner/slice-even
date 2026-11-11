@@ -110,6 +110,13 @@ button {
   white-space: normal;
 }
 
+/* The one main action of a screen. */
+.btn-main {
+  font-size: 26px;
+  padding: 14px 22px 13px;
+  white-space: normal;
+}
+
 .btn-yellow { background: var(--mango); }
 .btn-green { background: var(--lime); }
 .btn-pink { background: var(--coral); color: white; }
@@ -327,6 +334,51 @@ select:focus {
   letter-spacing: 0.25em;
   font-family: var(--display);
   font-weight: 400;
+}
+
+/* Single-player modes: three tiles, emoji over name. */
+.solo-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.btn.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 4px 9px;
+  font-size: 15px;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.tile span {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.home-card .error {
+  font-size: 14px;
+  margin-top: -6px;
+}
+
+/* Survival: the verdict on a cut, where the controls hint was. */
+.hint.verdict {
+  font-size: 16px;
+  padding: 10px 18px;
+  color: var(--ink);
+  animation: pop 0.4s cubic-bezier(0.2, 1.6, 0.4, 1) 1.2s both;
+}
+
+.hint.verdict.lost {
+  background: #ffe1dc;
+}
+
+.seat-count .stars {
+  -webkit-text-stroke: 0;
+  font-size: 15px;
 }
 
 .home-hint {
@@ -988,7 +1040,12 @@ select:focus {
     display: none;
   }
 
-  /* Home: two buttons side by side still fit. */
+  /* Home: the last line clears the sound button. */
+  .home {
+    padding-bottom: 60px;
+  }
+
+  /* Two buttons side by side still fit. */
   .home-card {
     padding: 18px 16px 16px;
   }
@@ -996,6 +1053,16 @@ select:focus {
   .home-card .btn {
     font-size: 17px;
     padding: 11px 12px;
+  }
+
+  .home-card .btn-main {
+    font-size: 23px;
+    padding: 13px 12px 12px;
+  }
+
+  .home-card .btn.tile {
+    font-size: 14px;
+    padding: 9px 2px 8px;
   }
 
   .tagline {

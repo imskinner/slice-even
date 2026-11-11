@@ -71,6 +71,11 @@ export function RecordsScreen({ onExit }: { onExit(): void }) {
           <span>
             <b>{stats.gamesWon}</b> partidas vencidas
           </span>
+          {stats.survival && (
+            <span>
+              sobrevivência: <b>nível {stats.survival.level}</b> · ★ {stats.survival.stars}
+            </span>
+          )}
         </div>
 
         <div className="lobby-label">

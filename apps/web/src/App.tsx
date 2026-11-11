@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Home, loadName } from "./Home.tsx";
 import { PracticeGame } from "./PracticeGame.tsx";
 import { DailyGame } from "./DailyGame.tsx";
+import { SurvivalGame } from "./SurvivalGame.tsx";
 import { RoomGame } from "./room/RoomGame.tsx";
 import { createRoom, multiplayerConfigured, quickPlay } from "./net/rooms.ts";
 import { sfx, unlockOnGesture } from "./audio/sfx.ts";
@@ -18,6 +19,7 @@ type Screen =
   | { type: "home" }
   | { type: "practice" }
   | { type: "daily" }
+  | { type: "survival" }
   | { type: "records" }
   | { type: "room"; code: string; name: string };
 
@@ -35,7 +37,9 @@ export function App() {
       ? { type: "practice" }
       : params.has("daily")
         ? { type: "daily" }
-        : { type: "home" },
+        : params.has("survival")
+          ? { type: "survival" }
+          : { type: "home" },
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +101,9 @@ export function App() {
     case "practice":
       content = <PracticeGame onExit={goHome} />;
       break;
+    case "survival":
+      content = <SurvivalGame onExit={goHome} />;
+      break;
     case "room":
       content = <RoomGame code={screen.code} name={screen.name} onExit={goHome} />;
       break;
@@ -110,6 +117,7 @@ export function App() {
           onJoin={(name, code) => enterRoom(code, name)}
           onPractice={() => setScreen({ type: "practice" })}
           onDaily={() => setScreen({ type: "daily" })}
+          onSurvival={() => setScreen({ type: "survival" })}
           onRecords={() => setScreen({ type: "records" })}
           onQuickPlay={joinPublic}
         />

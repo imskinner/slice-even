@@ -1,4 +1,4 @@
-import { findPlaneAtFraction, generateObject, objectSeed, ruleTarget, type Plane } from "@slice-even/core";
+import { findPlaneAtFraction, generateObject, meshVolume, objectSeed, ruleTarget, type Plane } from "@slice-even/core";
 import { LIMITS } from "./protocol.ts";
 import { RoomError, submitCut, type PlayerRecord, type RoomData, type RoundRecord } from "./room.ts";
 
@@ -98,16 +98,24 @@ function gaussian(random: () => number): number {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * random());
 }
 
-/** A bot's aim: the plane that leaves target ± noise on one side, at a random angle. */
-export function botPlane(round: RoundRecord, bot: PlayerRecord, random: () => number): Plane {
+/**
+ * A bot's aim: the plane that leaves target ± noise on one side, at a random
+ * angle. In "thirds" rounds it is two parallel planes, each off by its own noise.
+ */
+export function botCut(round: RoundRecord, bot: PlayerRecord, random: () => number): { plane: Plane; plane2?: Plane } {
   const object = generateObject(round.kind, objectSeed(round.seed, bot.id, round.rule));
-  const harder = round.rule.type === "blind" ? 1.4 : round.rule.type === "blitz" ? 1.2 : 1;
-  const error = Math.abs(gaussian(random)) * BOT_SKILL[bot.bot!.level] * harder;
-  const target = ruleTarget(round.rule);
+  const type = round.rule.type;
+  const harder = type === "blind" ? 1.4 : type === "blitz" || type === "spin" ? 1.2 : type === "grams" ? 1.3 : 1;
   // cutError = 2·|fraction − target|, so half the error goes into the fraction.
-  const fraction = Math.min(0.98, Math.max(0.02, target + (random() < 0.5 ? -1 : 1) * (error / 2)));
+  const miss = () => (random() < 0.5 ? -1 : 1) * ((Math.abs(gaussian(random)) * BOT_SKILL[bot.bot!.level] * harder) / 2);
   const angle = random() * Math.PI;
-  return findPlaneAtFraction(object.mesh, [Math.cos(angle), 0, Math.sin(angle)], random() < 0.5 ? fraction : 1 - fraction);
+  const normal: [number, number, number] = [Math.cos(angle), 0, Math.sin(angle)];
+  const at = (fraction: number) => findPlaneAtFraction(object.mesh, normal, Math.min(0.98, Math.max(0.02, fraction)));
+  if (type === "thirds") return { plane: at(1 / 3 + miss()), plane2: at(2 / 3 + miss()) };
+
+  const target = ruleTarget(round.rule, meshVolume(object.mesh) * object.density);
+  const fraction = Math.min(0.98, Math.max(0.02, target + miss()));
+  return { plane: at(random() < 0.5 ? fraction : 1 - fraction) };
 }
 
 /** Lets every bot whose moment has come make its cut. Returns whether anything changed. */
@@ -120,7 +128,8 @@ export function runDueBots(data: RoomData, now: number, random: () => number): b
   for (const plan of due) {
     const bot = data.players.find((p) => p.id === plan.playerId);
     if (!bot || round.status !== "cutting") continue;
-    submitCut(data, bot.id, round.number, botPlane(round, bot, random), Math.min(now, round.deadline));
+    const { plane, plane2 } = botCut(round, bot, random);
+    submitCut(data, bot.id, round.number, plane, Math.min(now, round.deadline), plane2);
   }
   return true;
 }

@@ -31,7 +31,8 @@ evaluator.useGroups = true;
 export function splitGeometry(
   geometry: THREE.BufferGeometry,
   plane: Plane,
-  skin: THREE.Material,
+  /** The piece's material; an array when the piece has already been cut once (skin and cut face). */
+  skin: THREE.Material | THREE.Material[],
   flesh: THREE.Material,
 ): Halves {
   const n = new THREE.Vector3(...plane.normal).normalize();

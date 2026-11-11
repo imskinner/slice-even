@@ -1,5 +1,5 @@
-import { OBJECT_KINDS, type ObjectKind } from "@slice-even/core";
-import { KIND_EMOJI, KIND_LABELS, rateError, type CutOutcome, type KindMode } from "../game.ts";
+import { OBJECT_KINDS, type ObjectKind, type RoundRule } from "@slice-even/core";
+import { KIND_EMOJI, KIND_LABELS, rateError, ruleInfo, type CutOutcome, type KindMode } from "../game.ts";
 import { useEffect } from "react";
 import { sfx } from "../audio/sfx.ts";
 import { isTouchDevice } from "./TouchControls.tsx";
@@ -15,6 +15,9 @@ interface HudProps {
   kind: ObjectKind;
   seed: string;
   mode: KindMode;
+  /** The twist being practiced (`?rule=` in the URL), and the object's weight for the ones that mention it. */
+  rule?: RoundRule;
+  mass?: number;
   outcome: CutOutcome | null;
   /** This cut beat your previous best for this item. */
   newBest?: boolean;
@@ -26,7 +29,21 @@ interface HudProps {
   onShift?(shift: SceneShift): void;
 }
 
-export function Hud({ kind, seed, mode, outcome, newBest = false, onMode, onNext, onRetry, onHome, onShift }: HudProps) {
+export function Hud({
+  kind,
+  seed,
+  mode,
+  rule,
+  mass,
+  outcome,
+  newBest = false,
+  onMode,
+  onNext,
+  onRetry,
+  onHome,
+  onShift,
+}: HudProps) {
+  const twist = rule && rule.type !== "classic" ? ruleInfo(rule, mass) : null;
   return (
     <div className="hud">
       <header className="hud-top">
@@ -52,6 +69,13 @@ export function Hud({ kind, seed, mode, outcome, newBest = false, onMode, onNext
         </nav>
       </header>
 
+      {twist && !outcome && (
+        <div className="round-bar">
+          <div className="rule-chip">
+            {twist.emoji} <b>{twist.title}</b> · {twist.goal}
+          </div>
+        </div>
+      )}
       {!outcome && <ControlsHint />}
       {outcome && <Result outcome={outcome} newBest={newBest} onNext={onNext} onRetry={onRetry} onShift={onShift} />}
     </div>
@@ -100,7 +124,12 @@ function Result({
   const panel = useSceneShift(onShift);
   const { score } = outcome;
   const rating = rateError(score.error);
-  const smaller = Math.min(score.fractionFront, 1 - score.fractionFront);
+  // Two pieces, or three in a "thirds" round.
+  const total = score.massFront + score.massBack + (score.massMid ?? 0) || 1;
+  const shares = (score.massMid === undefined ? [score.massBack, score.massFront] : [score.massBack, score.massMid, score.massFront]).map(
+    (m) => m / total,
+  );
+  const smaller = Math.min(...shares);
   const missed = smaller === 0;
   const sliver = !missed && smaller < 0.02;
   const label = missed ? "Errou o alvo!" : sliver ? "Só uma lasquinha!" : rating.label;
@@ -119,7 +148,8 @@ function Result({
       {!missed && (
         <>
           <div className="stats">
-            Erro <b>{pct(score.error)}</b> · {mm(outcome.offsetFromIdeal)} do corte perfeito{" "}
+            Erro <b>{pct(score.error)}</b> ·{" "}
+            {shares.length === 3 ? <>pedaços de {shares.map(pct).join(" / ")}</> : <>{mm(outcome.offsetFromIdeal)} do corte perfeito</>}{" "}
             <span className="legend">(linha verde)</span>
           </div>
         </>

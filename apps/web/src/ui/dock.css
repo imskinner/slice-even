@@ -263,8 +263,11 @@
   overflow: hidden;
 }
 
-.split-bar i:nth-child(1) { background: var(--mango); }
-.split-bar i:nth-child(2) { background: var(--sky); flex: 1; }
+/* Two pieces: yellow and blue, like the plates. Three: white in the middle. */
+.split-bar i { flex: none; }
+.split-bar i:first-of-type { background: var(--mango); }
+.split-bar i:last-of-type { background: var(--sky); flex: 1; }
+.split-bar i:nth-of-type(2):not(:last-of-type) { background: var(--paper); border-inline: 2px solid var(--ink); }
 
 /* Where the cut should have been. */
 .split-bar .tick {

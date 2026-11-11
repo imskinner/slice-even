@@ -47,22 +47,47 @@ function Board() {
 }
 
 const TARGET = new THREE.Vector3(0, 1, 1.5);
+const FOV = 35;
 // The initial camera position sets the angle; this sets how far back it sits.
 const BASE_DISTANCE = new THREE.Vector3(0, 15, 26).sub(TARGET).length() * 1.35;
+/** Scene width in view at the target, per unit of distance and of aspect ratio. */
+const WIDTH_PER_DISTANCE = 2 * Math.tan(THREE.MathUtils.degToRad(FOV / 2));
 
 /**
- * Pulls the camera back for long objects (a banana spans 20+ cm) and narrow
- * screens, keeping the current orbit direction.
+ * How far back the camera sits. Wide screens see the whole board, further
+ * back for long objects (a banana spans 20+ cm). Upright phones come close
+ * instead, so the object and a little room for the knife fill the width:
+ * aiming needs to see the object, not the board. With a results sheet over
+ * the lower half (`sheet`) a phone steps back again, to fit the board in
+ * the strip that is left.
  */
-function FrameCamera({ span }: { span: number }) {
+function frameDistance(span: number, aspect: number, sheet: boolean): number {
+  const wide = BASE_DISTANCE * THREE.MathUtils.clamp((span / 2 + 3) / 10, 1, 1.7);
+  if (aspect >= 1.2) return wide;
+  if (sheet) return wide / (aspect / 1.2);
+  const width = Math.max(span * 1.6, span + 7);
+  return Math.max(wide, width / (WIDTH_PER_DISTANCE * aspect));
+}
+
+/** Keeps the camera at the framing distance along the current orbit direction, easing between framings. */
+function FrameCamera({ span, shift }: { span: number; shift: SceneShift }) {
   const { camera, size } = useThree();
-  useEffect(() => {
-    const aspect = size.width / Math.max(1, size.height);
-    const k = THREE.MathUtils.clamp((span / 2 + 3) / 10, 1, 1.7) / Math.min(1, aspect / 1.2);
-    const offset = camera.position.clone().sub(TARGET).setLength(BASE_DISTANCE * k);
-    camera.position.copy(TARGET).add(offset);
+  const aspect = size.width / Math.max(1, size.height);
+  const target = frameDistance(span, aspect, shift.y > size.height * 0.15);
+  const offset = useMemo(() => new THREE.Vector3(), []);
+  const placed = useRef(false);
+  useFrame((_, dt) => {
+    const now = offset.copy(camera.position).sub(TARGET).length();
+    if (Math.abs(now - target) < 0.01) {
+      placed.current = true;
+      return;
+    }
+    // The first frame jumps straight there; later changes (a results sheet coming in) glide.
+    const next = placed.current ? now + (target - now) * (1 - Math.exp(-dt * 6)) : target;
+    placed.current = true;
+    camera.position.copy(TARGET).add(offset.setLength(next));
     camera.lookAt(TARGET);
-  }, [camera, span, size.width, size.height]);
+  });
   return null;
 }
 
@@ -107,8 +132,8 @@ export function GameCanvas({
 }) {
   return (
     <>
-      <Canvas shadows="percentage" camera={{ position: [0, 15, 26], fov: 35 }} gl={{ alpha: true }}>
-        <FrameCamera span={span} />
+      <Canvas shadows="percentage" camera={{ position: [0, 15, 26], fov: FOV }} gl={{ alpha: true }}>
+        <FrameCamera span={span} shift={shift} />
         <ShiftView shift={shift} />
         <StudioEnvironment />
         {/* Distant parts of the kitchen fade into the wall color. */}

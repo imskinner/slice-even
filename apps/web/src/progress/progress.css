@@ -1,14 +1,21 @@
 /* Records screen, achievement toast and the "new record" badge. */
 
-/* Phones: keep the bottom hint and touch controls clear of the sound button.
+/* Phones: the bottom row is reactions (left), the hint (middle) and sound
+   (right), with the touch controls right above it. Full-width panels still
+   sit above the corner buttons.
    (`body` outranks the base rules in styles.css, which loads after this file.) */
 @media (max-width: 520px) {
-  body .hud {
+  body .hud:has(> .result) {
     padding-bottom: 66px;
   }
 
+  body .hud > .hint,
+  body .round-status > .hint {
+    margin-inline: 50px;
+  }
+
   body .touch-controls {
-    bottom: 132px;
+    bottom: 92px;
   }
 }
 

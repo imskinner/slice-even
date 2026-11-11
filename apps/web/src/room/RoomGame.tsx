@@ -114,7 +114,8 @@ export function RoomGame({ code, name, onExit }: RoomGameProps) {
           <button className="btn btn-small" onClick={onExit}>
             ← Sair
           </button>
-          <h1 className="hud-title">Sala {room.code}</h1>
+          {/* On phones the room code only shows in the lobby: the round needs the space. */}
+          <h1 className={room.status === "lobby" ? "hud-title" : "hud-title wide-only"}>Sala {room.code}</h1>
           {round && room.status !== "lobby" && (
             <ItemBadge kind={round.kind} extra={`rodada ${round.number}/${room.total_rounds}`} />
           )}

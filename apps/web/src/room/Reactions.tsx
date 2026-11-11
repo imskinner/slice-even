@@ -5,11 +5,35 @@ import { sfx } from "../audio/sfx.ts";
 
 /**
  * Row of emoji buttons; the server ignores taps faster than its rate limit.
- * Floats at the edge of the screen while cutting; `inline` sits inside a results panel.
+ * Floats at the edge of the screen while cutting; `inline` sits inside a
+ * results panel. On phones the floating one folds into a single button, so
+ * it does not cover the board: tap to open, it closes itself after a moment.
  */
 export function ReactionBar({ onReact, inline = false }: { onReact(emoji: string): void; inline?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const closing = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(closing.current), []);
+  const closeSoon = () => {
+    clearTimeout(closing.current);
+    closing.current = setTimeout(() => setOpen(false), 3000);
+  };
+
   return (
-    <div className={inline ? "reaction-bar inline" : "reaction-bar"}>
+    <div className={`reaction-bar${inline ? " inline" : ""}${open ? " open" : ""}`}>
+      {!inline && (
+        <button
+          className="reaction-btn reaction-toggle"
+          aria-label="Reações"
+          aria-expanded={open}
+          onClick={(e) => {
+            e.currentTarget.blur();
+            setOpen(!open);
+            if (!open) closeSoon();
+          }}
+        >
+          {open ? "✕" : "😀"}
+        </button>
+      )}
       {REACTIONS.map((emoji) => (
         <button
           key={emoji}
@@ -18,6 +42,7 @@ export function ReactionBar({ onReact, inline = false }: { onReact(emoji: string
           onClick={(e) => {
             e.currentTarget.blur();
             onReact(emoji);
+            closeSoon();
           }}
         >
           {emoji}

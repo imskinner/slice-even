@@ -664,11 +664,80 @@ select:focus {
   animation: pop 0.5s ease-in-out infinite alternate;
 }
 
-.cut-chips {
+/* While cutting: timer, rule and who has cut, in one strip under the header.
+   The auto margin pins it there and leaves the middle of the screen to the board. */
+.round-bar {
+  align-self: center;
+  margin-bottom: auto;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.round-bar .timer {
+  flex: none;
+  width: 58px;
+  height: 58px;
+  border-width: 3px;
+  font-size: 23px;
+}
+
+.round-bar-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.seat-strip {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
+  align-items: center;
+  gap: 5px;
+  padding-left: 3px;
+}
+
+.seat {
+  position: relative;
+  display: inline-flex;
+  border-radius: 50%;
+}
+
+/* Has cut: a green ring and a tick. */
+.seat.done {
+  box-shadow: 0 0 0 3px var(--lime);
+}
+
+.seat.done::after {
+  content: "✓";
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: var(--lime);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.seat.off {
+  opacity: 0.45;
+}
+
+.seat-count {
+  margin-left: 4px;
+  font-family: var(--display);
+  font-size: 14px;
+  color: white;
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
 }
 
 .sound-toggle {
@@ -887,17 +956,76 @@ select:focus {
 }
 
 @media (max-width: 520px) {
-  .reaction-bar {
+  /* Folded into one button in the bottom-left corner (the sound button's twin). */
+  .reaction-bar:not(.inline) {
     top: auto;
-    bottom: 150px;
+    right: auto;
+    left: 16px;
+    bottom: 16px;
     transform: none;
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  /* Open, it runs along the bottom row, over the hint, stopping short of the sound button. */
+  .reaction-bar.open:not(.inline) .reaction-btn {
+    width: 37px;
+    height: 37px;
+    font-size: 17px;
+  }
+
+  .reaction-bar:not(.inline) .reaction-toggle {
+    display: block;
+  }
+
+  .reaction-bar:not(.inline):not(.open) .reaction-btn:not(.reaction-toggle) {
+    display: none;
   }
 
   .reaction-btn {
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
     font-size: 19px;
   }
+
+  /* Phones: the round needs the header's second line. */
+  .wide-only {
+    display: none;
+  }
+
+  .round-bar {
+    gap: 8px;
+  }
+
+  .round-bar .timer {
+    width: 50px;
+    height: 50px;
+    font-size: 20px;
+  }
+
+  .round-bar .rule-chip {
+    font-size: 13px;
+    padding: 4px 11px;
+    border-radius: 16px;
+  }
+
+  .round-bar .avatar {
+    width: 25px;
+    height: 25px;
+    font-size: 14px;
+  }
+
+  .hint {
+    font-size: 13px;
+    line-height: 1.25;
+    padding: 7px 13px;
+    border-radius: 18px;
+  }
+}
+
+/* Only phones fold the floating reactions. */
+.reaction-toggle {
+  display: none;
 }
 
 .cut-label {

@@ -3,6 +3,7 @@ import type { Cut, Player, Room, Round } from "../net/rooms.ts";
 import { ruleInfo } from "../game.ts";
 import { sfx } from "../audio/sfx.ts";
 import { Avatar, displayName, seatColor } from "./players.tsx";
+import { isTouchDevice } from "../ui/TouchControls.tsx";
 import "./room.css";
 
 export const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
@@ -142,41 +143,56 @@ export function RoundStatus({
   useEffect(() => {
     if (remaining > 0 && remaining <= 5) sfx.tick(remaining <= 3);
   }, [remaining]);
+  const [touch] = useState(isTouchDevice);
   const iCut = cuts.some((c) => c.round_id === round.id && c.user_id === userId);
   const inRound = players.filter((p) => round.participants.includes(p.user_id));
   const done = inRound.filter((p) => p.last_cut_round >= round.number).length;
   const waiting = !round.participants.includes(userId);
   const info = ruleInfo(round.rule);
 
+  const hint = waiting
+    ? "Você entrou no meio da rodada: joga a partir da próxima!"
+    : iCut
+      ? `Corte enviado! ${inRound.length - done === 1 ? "Falta 1" : `Faltam ${inRound.length - done}`}…`
+      : remaining <= 0
+        ? "Tempo esgotado!"
+        : touch
+          ? "Arraste para mirar · ⟲ ⟳ giram"
+          : "Clique ou Espaço corta · Roda ou Q/E gira a faca";
+
   return (
-    <div className="round-status">
-      <div className="rule-chip">
-        {info.emoji} <b>{info.title}</b> · {info.goal}
+    <>
+      {/* Everything about the round sits at the top, so the board and the controls below stay clear. */}
+      <div className="round-bar">
+        <div
+          className={`timer ${remaining <= 5 ? "urgent" : ""}`}
+          style={{ "--p": Math.min(1, remaining / total) } as CSSProperties}
+        >
+          {remaining}
+        </div>
+        <div className="round-bar-main">
+          <div className="rule-chip">
+            {info.emoji} <b>{info.title}</b> · {info.goal}
+          </div>
+          {/* Who has cut already: one avatar each instead of a row of name pills. */}
+          <div className="seat-strip" aria-label={`${done} de ${inRound.length} já cortaram`}>
+            {inRound.map((p) => (
+              <span
+                key={p.user_id}
+                className={`seat${p.last_cut_round >= round.number ? " done" : ""}${p.online ? "" : " off"}`}
+                title={displayName(p)}
+              >
+                <Avatar player={p} color={seatColor(players, p.user_id)} />
+              </span>
+            ))}
+            <span className="seat-count">
+              {done}/{inRound.length}
+            </span>
+          </div>
+        </div>
       </div>
-      <div
-        className={`timer ${remaining <= 5 ? "urgent" : ""}`}
-        style={{ "--p": Math.min(1, remaining / total) } as CSSProperties}
-      >
-        {remaining}
-      </div>
-      <div className="cut-chips">
-        {inRound.map((p) => (
-          <span key={p.user_id} className={p.last_cut_round >= round.number ? "chip done" : "chip"}>
-            {p.last_cut_round >= round.number ? "✓ " : ""}
-            {p.name}
-          </span>
-        ))}
-      </div>
-      <div className="hint">
-        {waiting
-          ? "Você entrou no meio da rodada: joga a partir da próxima!"
-          : iCut
-            ? `Corte enviado! Aguardando os outros (${done}/${inRound.length})…`
-            : remaining > 0
-              ? `${info.goal} Clique ou Espaço.`
-              : "Tempo esgotado!"}
-      </div>
-    </div>
+      <div className="hint">{hint}</div>
+    </>
   );
 }
 

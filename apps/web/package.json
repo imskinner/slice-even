@@ -24,8 +24,6 @@
     "@slice-even/server": "*",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "three": "^0.186.1",
-    "three-bvh-csg": "^0.0.18",
-    "three-mesh-bvh": "^0.9.16"
+    "three": "^0.186.1"
   }
 }

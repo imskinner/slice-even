@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import type { AnyGeneratedObject, Plane } from "@slice-even/core";
 import { toBufferGeometry } from "./geometry.ts";
@@ -129,6 +129,25 @@ export function SliceStage({
     [skin, flesh],
   );
 
+  // The object stays out of sight until its shaders (skin and cut face) are
+  // compiled: usually at once, since the canvas warms them up, but the first
+  // of a kind would otherwise freeze the frame it appears in.
+  const { gl, scene, camera } = useThree();
+  const [compiled, setCompiled] = useState(false);
+  useEffect(() => {
+    let gone = false;
+    const done = () => {
+      if (!gone) setCompiled(true);
+    };
+    const probe = new THREE.Mesh(geometry, [skin, flesh]);
+    probe.castShadow = true;
+    probe.receiveShadow = true;
+    gl.compileAsync(probe, camera, scene).then(done, done);
+    return () => {
+      gone = true;
+    };
+  }, [gl, scene, camera, geometry, skin, flesh]);
+
   const box = geometry.boundingBox!;
   const lift = -box.min.y;
   const center = (box.min.y + box.max.y) / 2;
@@ -169,12 +188,13 @@ export function SliceStage({
   // The knife wakes up when the object touches down. On a timer, not on a
   // rendered frame: a tab that is not being drawn must still let you cut.
   useEffect(() => {
+    if (!compiled) return;
     const id = setTimeout(() => setLanded(true), (ENTER_SECONDS / 2.75) * 1000);
     return () => clearTimeout(id);
-  }, []);
+  }, [compiled]);
   // Wall-clock time, not capped per frame: in a throttled tab the object must still land on time.
   useFrame((_, dt) => {
-    if (motion.enter < 1) {
+    if (compiled && motion.enter < 1) {
       motion.enter = Math.min(1, motion.enter + dt / ENTER_SECONDS);
       // First contact with the board, a third of the way in.
       if (motion.enter >= 1 / 2.75 && !motion.thud) {
@@ -194,7 +214,7 @@ export function SliceStage({
   });
 
   return (
-    <group position={[0, lift, 0]}>
+    <group position={[0, lift, 0]} visible={compiled}>
       <group ref={root}>
         {outcome?.plane2 ? (
           <Thirds

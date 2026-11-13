@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { generateObject, OBJECT_KINDS, type ObjectKind, type Plane } from "@slice-even/core";
 import { StudioEnvironment } from "../scene/GameCanvas.tsx";
+import { ShaderWarmup } from "../scene/ShaderWarmup.tsx";
 import { createMaterials, type ObjectMaterials } from "../scene/materials.ts";
 import { splitGeometry, toBufferGeometry } from "../scene/geometry.ts";
 import { appearanceFor, randomSeed } from "../game.ts";
@@ -104,8 +105,19 @@ function FloatingProduce({ trail, onSlice }: { trail: React.RefObject<Trail>; on
     return { w: h * cam.aspect, h };
   };
 
+  // Kinds whose shaders are compiled. Only these are spawned: drawing a kind
+  // for the first time would otherwise freeze the page while its shader
+  // compiles, and at load that used to be every kind at once.
+  const ready = useRef<ObjectKind[]>([]);
+  /** Objects still owed to the screen: the opening batch, filled in as kinds become ready. */
+  const owed = useRef(0);
+
   const spawn = (initial: boolean) => {
-    const kind = OBJECT_KINDS[Math.floor(Math.random() * OBJECT_KINDS.length)]!;
+    if (ready.current.length === 0) {
+      owed.current += 1;
+      return;
+    }
+    const kind = ready.current[Math.floor(Math.random() * ready.current.length)]!;
     const seed = randomSeed();
     const object = generateObject(kind, seed, "preview");
     const geometry = toBufferGeometry(object.mesh);
@@ -135,8 +147,7 @@ function FloatingProduce({ trail, onSlice }: { trail: React.RefObject<Trail>; on
   };
 
   useEffect(() => {
-    const count = size.width < 700 ? 6 : 10;
-    for (let i = 0; i < count; i++) spawn(true);
+    owed.current = size.width < 700 ? 6 : 10;
     return () => {
       for (const item of world.items) disposeItem(item);
       for (const d of world.debris) removeDebris(d);
@@ -147,6 +158,16 @@ function FloatingProduce({ trail, onSlice }: { trail: React.RefObject<Trail>; on
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** A kind's shaders are ready: it joins the pool, and brings in part of the opening batch. */
+  const onKindReady = (kind: ObjectKind) => {
+    ready.current.push(kind);
+    const share = Math.ceil(owed.current / Math.max(1, OBJECT_KINDS.length - ready.current.length + 1));
+    for (let i = 0; i < share && owed.current > 0; i++) {
+      owed.current -= 1;
+      spawn(true);
+    }
+  };
 
   const disposeItem = (item: Item) => {
     item.group.removeFromParent();
@@ -324,7 +345,13 @@ function FloatingProduce({ trail, onSlice }: { trail: React.RefObject<Trail>; on
   });
 
   useEffect(() => () => dropGeometry.dispose(), [dropGeometry]);
-  return <group ref={root} />;
+  return (
+    <>
+      <group ref={root} />
+      {/* Two at a time: the screen is empty until the first kinds are ready. */}
+      <ShaderWarmup onKindReady={onKindReady} parallel={2} />
+    </>
+  );
 }
 
 function segmentDistance(px: number, py: number, a: TrailPoint, b: TrailPoint): number {

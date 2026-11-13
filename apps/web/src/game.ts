@@ -28,6 +28,13 @@ export interface CutOutcome {
   ideal2?: Plane;
 }
 
+/**
+ * Bisection steps for the ideal cut shown on the board. Each one is a pass
+ * over the whole mesh, at the moment of the cut; 26 place the line to well
+ * under a micron, and the score does not depend on it.
+ */
+const IDEAL_ITERATIONS = 26;
+
 /** Same math the scoring server will run. */
 export function evaluateCut(object: GeneratedObject, plane: Plane, target = 0.5): CutOutcome {
   const raw = scoreCut(object.mesh, plane, object.density);
@@ -42,7 +49,7 @@ export function evaluateCut(object: GeneratedObject, plane: Plane, target = 0.5)
   // For a non-half target either side may hold it: show the ideal plane nearer this cut.
   const candidates = target === 0.5 ? [0.5] : [target, 1 - target];
   const ideal = candidates
-    .map((f) => findPlaneAtFraction(object.mesh, plane.normal, f))
+    .map((f) => findPlaneAtFraction(object.mesh, plane.normal, f, IDEAL_ITERATIONS))
     .reduce((best, p) => (Math.abs(offsetTo(p)) < Math.abs(offsetTo(best)) ? p : best));
   return { plane, ideal, score, offsetFromIdeal: offsetTo(ideal) };
 }
@@ -108,8 +115,8 @@ export function evaluateThirds(object: GeneratedObject, first: Plane, second: Pl
   const len = Math.hypot(...n);
   const along = (p: Plane) => (p.point[0] * n[0] + p.point[1] * n[1] + p.point[2] * n[2]) / len;
   // A third of the mass in front of the upper ideal cut, two thirds in front of the lower.
-  const ideal = findPlaneAtFraction(object.mesh, n, 2 / 3);
-  const ideal2 = findPlaneAtFraction(object.mesh, n, 1 / 3);
+  const ideal = findPlaneAtFraction(object.mesh, n, 2 / 3, IDEAL_ITERATIONS);
+  const ideal2 = findPlaneAtFraction(object.mesh, n, 1 / 3, IDEAL_ITERATIONS);
   const mine = [along(first), along(second)].sort((a, b) => a - b);
   const wanted = [along(ideal), along(ideal2)].sort((a, b) => a - b);
   const offsets = [mine[0]! - wanted[0]!, mine[1]! - wanted[1]!];

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -8,6 +8,7 @@ import { Kitchen } from "./Kitchen.tsx";
 import { TouchControls } from "../ui/TouchControls.tsx";
 import { NO_SHIFT, type SceneShift } from "../ui/ResultDock.tsx";
 import { WEIGH_WIDTH } from "./Weigh.tsx";
+import { ShaderWarmup } from "./ShaderWarmup.tsx";
 import { SCENE_KICK } from "./Knife.tsx";
 import { setAmbience } from "../audio/sfx.ts";
 
@@ -145,6 +146,42 @@ function ShiftView({ shift, weighing }: { shift: SceneShift; weighing: boolean }
 }
 
 /**
+ * Holds the scene back until its shaders are compiled. Drawing something
+ * for the first time compiles its shader on the spot, and the kitchen has
+ * about twenty: shown straight away, the page froze for a moment on the way
+ * in. Compiled in the background instead, the interface stays alive and the
+ * scene appears when it can be drawn without a hitch. After that the other
+ * objects' shaders are warmed up one by one.
+ */
+function SceneGate({ children }: { children: ReactNode }) {
+  const { gl, scene, camera } = useThree();
+  const group = useRef<THREE.Group>(null!);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let gone = false;
+    const open = () => {
+      if (!gone) setReady(true);
+    };
+    // A moment, so the environment map and the lights are in place: programs depend on them.
+    const id = setTimeout(() => {
+      gl.compileAsync(group.current, camera, scene).then(open, open);
+    }, 30);
+    return () => {
+      gone = true;
+      clearTimeout(id);
+    };
+  }, [gl, scene, camera]);
+  return (
+    <>
+      <group ref={group} visible={ready}>
+        {children}
+      </group>
+      {ready && <ShaderWarmup />}
+    </>
+  );
+}
+
+/**
  * Cutting board, lights and camera shared by practice and multiplayer.
  * `span` is the object's largest horizontal size, cm, for framing; `shift`
  * moves the scene out from under a results panel; `weighing` makes room for
@@ -191,9 +228,11 @@ export function GameCanvas({
         />
         {/* Warm daylight from the window side. */}
         <directionalLight position={[-30, 20, -10]} intensity={0.8} color="#ffd29a" />
-        <Kitchen />
-        <Board />
-        {children}
+        <SceneGate>
+          <Kitchen />
+          <Board />
+          {children}
+        </SceneGate>
         <OrbitControls
           target={TARGET.toArray()}
           enableZoom={false}

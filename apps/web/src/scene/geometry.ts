@@ -1,6 +1,5 @@
 import * as THREE from "three";
-import { Brush, Evaluator, INTERSECTION, SUBTRACTION } from "three-bvh-csg";
-import type { Mesh, Plane } from "@slice-even/core";
+import { splitMesh, type Mesh, type Plane, type SplitPiece } from "@slice-even/core";
 
 export function toBufferGeometry(mesh: Mesh): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
@@ -17,35 +16,34 @@ export interface Halves {
   back: THREE.Mesh;
 }
 
-const evaluator = new Evaluator();
-evaluator.attributes = ["position", "normal"];
-evaluator.useGroups = true;
-
 /**
- * Visual split with flat caps, via CSG against a big box whose face lies on
- * the plane. The skin keeps `skin`; the cut face gets `flesh`.
+ * Visual split with flat caps. The skin keeps `skin`; the cut faces get
+ * `flesh` (two material groups, so a piece can be split again: "thirds"
+ * rounds).
  *
  * This is only for rendering. The score comes from core's sliceVolumes, which
  * does not need caps.
  */
-export function splitGeometry(
-  geometry: THREE.BufferGeometry,
-  plane: Plane,
-  /** The piece's material; an array when the piece has already been cut once (skin and cut face). */
-  skin: THREE.Material | THREE.Material[],
-  flesh: THREE.Material,
-): Halves {
-  const n = new THREE.Vector3(...plane.normal).normalize();
-  const size = 100;
-  const box = new Brush(new THREE.BoxGeometry(size, size, size), flesh);
-  // Box's local +X face goes on the plane, the box itself on the front side.
-  box.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), n);
-  box.position.set(...plane.point).addScaledVector(n, size / 2);
-  box.updateMatrixWorld();
+export function splitGeometry(geometry: THREE.BufferGeometry, plane: Plane, skin: THREE.Material, flesh: THREE.Material): Halves {
+  const positions = geometry.getAttribute("position").array;
+  const indices = geometry.getIndex()!.array;
+  // A piece of an earlier split remembers where its own cut faces begin.
+  const capStart = (geometry.userData.capStart as number | undefined) ?? indices.length / 3;
+  const { front, back } = splitMesh(positions, indices, plane, capStart);
+  return { front: pieceMesh(front, skin, flesh), back: pieceMesh(back, skin, flesh) };
+}
 
-  const object = new Brush(geometry, skin);
-  object.updateMatrixWorld();
-
-  const [front, back] = evaluator.evaluate(object, box, [INTERSECTION, SUBTRACTION], [new Brush(), new Brush()]);
-  return { front: front!, back: back! };
+function pieceMesh(piece: SplitPiece, skin: THREE.Material, flesh: THREE.Material): THREE.Mesh {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(piece.positions, 3));
+  geometry.setIndex(new THREE.BufferAttribute(piece.indices, 1));
+  geometry.addGroup(0, piece.capStart * 3, 0);
+  geometry.addGroup(piece.capStart * 3, piece.indices.length - piece.capStart * 3, 1);
+  // Cap vertices are separate from the skin's, so the skin stays smooth and the cut face flat.
+  geometry.computeVertexNormals();
+  geometry.userData.capStart = piece.capStart;
+  if (piece.indices.length > 0) geometry.computeBoundingBox();
+  // Nothing on this side (the knife missed): an empty box at the origin rather than an infinite one.
+  else geometry.boundingBox = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+  return new THREE.Mesh(geometry, [skin, flesh]);
 }

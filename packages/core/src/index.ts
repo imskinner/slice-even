@@ -77,3 +77,4 @@ export {
   scoreThirds,
   type RoundRule,
 } from "./round.ts";
+export { splitMesh, type SplitPiece } from "./splitMesh.ts";

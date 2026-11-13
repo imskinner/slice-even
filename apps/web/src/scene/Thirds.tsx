@@ -41,7 +41,7 @@ export function Thirds({ geometry, plane, plane2, skin, flesh, bounds, stem, ste
     const at = (d: number): Plane => ({ point: n.clone().multiplyScalar(d).toArray(), normal: n.toArray() });
     // Behind the lower cut, then what is left split again at the upper one.
     const first = splitGeometry(geometry, at(lo), skin, flesh);
-    const second = splitGeometry(first.front.geometry, at(hi), first.front.material, flesh);
+    const second = splitGeometry(first.front.geometry, at(hi), skin, flesh);
     first.front.geometry.dispose();
     const stemAt = new THREE.Vector3(...stemBase).dot(n);
     const meshes = [first.back, second.back, second.front];

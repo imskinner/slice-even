@@ -148,8 +148,8 @@ export function join(data: RoomData, playerId: string, token: string, rawName: s
 
 const TARGETS = [0.25, 0.3, 1 / 3, 0.4];
 const GRAM_SHARES = [0.2, 0.25, 0.3, 0.35, 0.4];
-/** Spinning only matters for shapes that are not round: these are the long ones. */
-const LONG_KINDS: ObjectKind[] = ["banana", "carrot", "cucumber", "bread"];
+/** Spinning only matters for shapes that are not round: the long ones and the lumpy ones. */
+const LONG_KINDS: ObjectKind[] = ["banana", "carrot", "cucumber", "bread", "eggplant", "ginger", "potato"];
 
 /**
  * The twist for round `number`: the first is always classic so newcomers

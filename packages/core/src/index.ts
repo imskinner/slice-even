@@ -63,6 +63,10 @@ export {
   type CakeFlavor,
   type CakeFrosting,
 } from "./generators/cake.ts";
+export { generatePotato, POTATO_DENSITY, type PotatoParams } from "./generators/potato.ts";
+export { generateGinger, GINGER_DENSITY, type GingerParams } from "./generators/ginger.ts";
+export { generateEggplant, eggplantBaseRadius, EGGPLANT_DENSITY, type EggplantParams } from "./generators/eggplant.ts";
+export { generatePepper, PEPPER_BOXINESS, PEPPER_DENSITY, type PepperColor, type PepperParams } from "./generators/pepper.ts";
 export { buildHorizontalSweep, bowedSpine, roundTip, type HorizontalSweep } from "./geometry/sweep.ts";
 export { generateObject, OBJECT_KINDS, type ObjectKind, type AnyGeneratedObject } from "./generators/index.ts";
 export { meshToObj } from "./exportObj.ts";

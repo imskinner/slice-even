@@ -210,7 +210,7 @@ export function Home({
           <button className="btn btn-small" onClick={onRecords}>
             🏅 Recordes e conquistas
           </button>
-          <div className="home-hint">Passe o {isTouchDevice() ? "dedo" : "mouse"} rápido pelas frutas para fatiar!</div>
+          <div className="home-hint">Passe o {isTouchDevice() ? "dedo" : "mouse"} rápido pela comida para fatiar!</div>
         </div>
       </div>
     </>

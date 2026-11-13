@@ -75,6 +75,42 @@ export function Decoration({ kind, anchor, tilt }: { kind: ObjectKind; anchor: T
           </mesh>
         </group>
       );
+    case "pepper":
+      return (
+        // A stout stem, bent a little, on a small green cap in the dimple.
+        <group position={anchor} rotation={[tilt * 0.6, tilt * 3, tilt * 0.8]}>
+          <mesh position={[0, 0.1, 0]} castShadow>
+            <cylinderGeometry args={[0.75, 1.0, 0.35, 12]} />
+            <meshStandardMaterial color="#3c7d22" roughness={0.6} />
+          </mesh>
+          <mesh position={[0, 0.95, 0]} castShadow>
+            <cylinderGeometry args={[0.28, 0.4, 1.6, 10]} />
+            <meshStandardMaterial color="#4a8f28" roughness={0.55} />
+          </mesh>
+        </group>
+      );
+    case "eggplant":
+      return (
+        // The cap: a stem and five sepals lying back along the fruit. Local +Y points away from it (-X).
+        <group position={anchor} rotation={[tilt, 0, Math.PI / 2]}>
+          <mesh position={[0, 0.9, 0]} rotation={[0, 0, tilt * 0.8]} castShadow>
+            <cylinderGeometry args={[0.22, 0.38, 2.0, 8]} />
+            <meshStandardMaterial color="#4e7d2c" roughness={0.6} />
+          </mesh>
+          <mesh position={[0, -0.05, 0]} castShadow>
+            <sphereGeometry args={[1.25, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
+            <meshStandardMaterial color="#47752a" roughness={0.65} />
+          </mesh>
+          {Array.from({ length: 5 }, (_, i) => (
+            <group key={i} rotation={[0, (i / 5) * Math.PI * 2, 0]}>
+              <mesh position={[1.25, -0.75, 0]} rotation={[0, 0, 0.95]} scale={[0.5, 1, 0.16]} castShadow>
+                <sphereGeometry args={[1.25, 10, 8]} />
+                <meshStandardMaterial color="#47752a" roughness={0.65} />
+              </mesh>
+            </group>
+          ))}
+        </group>
+      );
     default:
       return null;
   }

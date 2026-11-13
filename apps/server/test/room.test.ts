@@ -26,7 +26,7 @@ import {
 import { LIMITS, revealSchedule } from "../src/protocol.ts";
 
 const T0 = 1_700_000_000_000;
-const fixed = () => 0.1; // always the first kind: apple
+const fixed = () => 0.05; // always the first kind: apple
 
 function lobby(players = ["ana", "bruno"]): RoomData {
   const data = createRoomData("ABCDE", 3, T0);
@@ -284,7 +284,7 @@ describe("new rules", () => {
       for (const id of ["ana", "bruno"]) submitCut(data, id, 1, { point: [0, 0, 0], normal: [1, 0, 0] }, T0);
       const round = startRound(data, "ana", T0 + 5000, "s2", () => pick);
       expect(round.rule.type).toBe("spin");
-      expect(["banana", "carrot", "cucumber", "bread"]).toContain(round.kind);
+      expect(["banana", "carrot", "cucumber", "bread", "eggplant", "ginger", "potato"]).toContain(round.kind);
     }
   });
 

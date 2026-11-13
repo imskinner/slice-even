@@ -16,6 +16,10 @@ const MASS_RANGE: Record<ObjectKind, [number, number]> = {
   banana: [70, 300],
   carrot: [30, 260],
   cake: [120, 900],
+  potato: [90, 620],
+  ginger: [35, 260],
+  eggplant: [100, 640],
+  pepper: [50, 330],
 };
 
 describe.each(OBJECT_KINDS)("%s", (kind) => {

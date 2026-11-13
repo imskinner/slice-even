@@ -13,6 +13,7 @@ import { Thirds } from "./Thirds.tsx";
 import { sfx } from "../audio/sfx.ts";
 import type { CutOutcome } from "../game.ts";
 import type { Ghost } from "../net/rooms.ts";
+import { selectedSkin } from "../progress/skins.ts";
 
 interface SliceStageProps {
   object: AnyGeneratedObject;
@@ -114,8 +115,11 @@ export function SliceStage({
   const [turn, setTurn] = useState(0);
   /** The first of two cuts, shown on the object until the second lands. */
   const [first, setFirst] = useState<Plane | null>(null);
+  // A blade of light burns through; steel sounds like whatever it is cutting.
+  const [saber] = useState(() => selectedSkin().sound === "saber");
+  const cutSound = () => (saber ? sfx.saberCut() : sfx.cut(object.kind));
   const handleCut = (plane: Plane, second?: Plane) => {
-    sfx.cut(object.kind);
+    cutSound();
     // The knife works in the board's frame; the score needs the object's.
     const angle = spinAngle();
     setTurn(angle);
@@ -312,7 +316,7 @@ export function SliceStage({
           onAim={onAim}
           cuts={cuts}
           onFirstCut={(plane) => {
-            sfx.cut(object.kind);
+            cutSound();
             setFirst(plane);
           }}
         />

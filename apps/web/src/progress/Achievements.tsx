@@ -79,7 +79,7 @@ export function RecordsScreen({ onExit }: { onExit(): void }) {
         </div>
 
         <div className="lobby-label">
-          Fruteira de ouro · {golden.length}/{OBJECT_KINDS.length}{" "}
+          Despensa de ouro · {golden.length}/{OBJECT_KINDS.length}{" "}
           <span className="muted">(abaixo de {pct(GOLDEN_ERROR)} em cada item)</span>
         </div>
         <div className="kind-grid">

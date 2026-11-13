@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { Plane } from "@slice-even/core";
 import { haptic, sfx } from "../audio/sfx.ts";
-import { RoundedBox } from "@react-three/drei";
+import { KnifeModel } from "./KnifeModels.tsx";
 import { selectedSkin } from "../progress/skins.ts";
 
 interface KnifeProps {
@@ -51,39 +51,6 @@ export const SCENE_KICK = "scene:kick";
 const BITE_SECONDS = 0.055;
 
 /**
- * A chef's knife seen from the side: straight edge along the bottom, belly
- * curving up to the tip, straight spine. Tall skins (the cleaver) are a
- * plain rectangle. Thin along X (the cut's normal), long along Z.
- */
-function bladeGeometry(height: number, cleaver: boolean): THREE.BufferGeometry {
-  const half = BLADE_LENGTH / 2;
-  const shape = new THREE.Shape();
-  shape.moveTo(-half, 0);
-  if (cleaver) {
-    shape.lineTo(half, 0);
-    shape.lineTo(half, height);
-  } else {
-    shape.lineTo(half - 4, 0);
-    shape.quadraticCurveTo(half - 0.6, 0.15, half, height * 0.62);
-    shape.quadraticCurveTo(half - 1.2, height, half - 4.5, height);
-  }
-  shape.lineTo(-half, height);
-  shape.closePath();
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: 0.1,
-    bevelEnabled: true,
-    bevelThickness: 0.03,
-    bevelSize: 0.05,
-    bevelSegments: 1,
-    curveSegments: 14,
-  });
-  // The shape was drawn in XY and extruded along Z: stand it along Z, thin along X.
-  geometry.translate(0, 0, -0.05);
-  geometry.rotateY(-Math.PI / 2);
-  return geometry;
-}
-
-/**
  * Vertical knife that follows the mouse over the apple. Wheel or Q/E turn it,
  * arrows nudge it, Shift slows everything down, click or Space cuts.
  * On touch screens a finger drags it (relative, so the finger never covers
@@ -129,7 +96,8 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim, cuts = 
     const cut = () => {
       if (s.drop >= 0) return;
       s.drop = 0;
-      sfx.whoosh();
+      if (skin.sound === "saber") sfx.saberSwing();
+      else sfx.whoosh();
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -202,7 +170,7 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim, cuts = 
       window.removeEventListener(KNIFE_CUT, cut);
       window.dispatchEvent(new CustomEvent(KNIFE_STATE, { detail: false }));
     };
-  }, [active, gl, s]);
+  }, [active, gl, s, skin.sound]);
 
   useFrame((_, dt) => {
     if (active && s.drop < 0 && (!s.touch || s.fingerDown)) {
@@ -275,36 +243,12 @@ export function Knife({ top, bottom, center, lift, active, onCut, onAim, cuts = 
   });
 
   const guideHeight = top - bottom + 2;
-  const blade3d = useMemo(() => bladeGeometry(bladeHeight, skin.height >= 1.5), [bladeHeight, skin.height]);
-  useEffect(() => () => blade3d.dispose(), [blade3d]);
 
   return (
     <group ref={rig}>
       {/* Local X is the plane normal, Z runs along the blade. */}
       <group ref={blade}>
-        <mesh geometry={blade3d} castShadow>
-          <meshStandardMaterial
-            color={skin.blade.color}
-            metalness={skin.blade.metalness}
-            roughness={skin.blade.roughness}
-            emissive={skin.blade.emissive ?? "#000000"}
-            emissiveIntensity={skin.blade.emissive ? 0.8 : 0}
-          />
-        </mesh>
-        {/* Bolster and handle on the far side (-Z) so they do not hide the object from the default camera. */}
-        <mesh position={[0, bladeHeight * 0.62, -(BLADE_LENGTH / 2 + 0.3)]} castShadow>
-          <boxGeometry args={[0.5, Math.min(2.2, bladeHeight * 0.75), 0.7]} />
-          <meshStandardMaterial color={skin.blade.color} metalness={0.6} roughness={0.3} />
-        </mesh>
-        <RoundedBox
-          args={[0.95, 1.5, 7.4]}
-          radius={0.4}
-          smoothness={3}
-          position={[0, bladeHeight * 0.62, -(BLADE_LENGTH / 2 + 4.2)]}
-          castShadow
-        >
-          <meshStandardMaterial color={skin.handle.color} metalness={skin.handle.metalness ?? 0} roughness={0.6} />
-        </RoundedBox>
+        <KnifeModel skin={skin} height={bladeHeight} />
       </group>
       <group ref={guide}>
         <mesh position={[0, (top + bottom) / 2, 0]} rotation={[0, Math.PI / 2, 0]}>

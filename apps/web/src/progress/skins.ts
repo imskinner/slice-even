@@ -2,7 +2,8 @@ import { ACHIEVEMENTS, loadStats, type Stats } from "./stats.ts";
 
 /**
  * Knife skins: purely cosmetic rewards unlocked by achievements. The choice
- * is kept in this browser, like the rest of the personal progress.
+ * is kept in this browser, like the rest of the personal progress. What each
+ * one looks like is in scene/KnifeModels.tsx.
  */
 export interface KnifeSkin {
   id: string;
@@ -10,20 +11,20 @@ export interface KnifeSkin {
   emoji: string;
   /** Achievement that unlocks it; null = always available. */
   unlock: string | null;
-  blade: { color: string; metalness: number; roughness: number; emissive?: string };
-  handle: { color: string; metalness?: number };
   /** Blade height multiplier (the cleaver is tall). */
   height: number;
+  /** A blade of light sounds like one. */
+  sound?: "saber";
 }
 
 export const SKINS: KnifeSkin[] = [
-  { id: "classic", name: "Clássica", emoji: "🔪", unlock: null, blade: { color: "#e6eaee", metalness: 0.25, roughness: 0.25 }, handle: { color: "#3b2a20" }, height: 1 },
-  { id: "chef", name: "Chef", emoji: "👨‍🍳", unlock: "first_cut", blade: { color: "#d6dde3", metalness: 0.5, roughness: 0.18 }, handle: { color: "#111518" }, height: 1.2 },
-  { id: "rustic", name: "Rústica", emoji: "🪵", unlock: "cook", blade: { color: "#cfc6b8", metalness: 0.3, roughness: 0.45 }, handle: { color: "#a5713f" }, height: 1 },
-  { id: "cleaver", name: "Cutelo", emoji: "🪓", unlock: "champion", blade: { color: "#b9c2c8", metalness: 0.45, roughness: 0.3 }, handle: { color: "#2b2b2b" }, height: 1.7 },
-  { id: "golden", name: "Dourada", emoji: "🏆", unlock: "golden_bowl", blade: { color: "#f5c542", metalness: 0.7, roughness: 0.2 }, handle: { color: "#7a4a12", metalness: 0.3 }, height: 1.1 },
-  { id: "neon", name: "Neon", emoji: "💡", unlock: "regular", blade: { color: "#5ff3ff", metalness: 0.1, roughness: 0.3, emissive: "#16c8e0" }, handle: { color: "#1b1b2e" }, height: 1 },
-  { id: "laser", name: "Laser", emoji: "🔴", unlock: "surgeon", blade: { color: "#ff4d5e", metalness: 0, roughness: 0.4, emissive: "#ff1f3a" }, handle: { color: "#202020", metalness: 0.6 }, height: 0.8 },
+  { id: "classic", name: "Clássica", emoji: "🔪", unlock: null, height: 1 },
+  { id: "chef", name: "Chef", emoji: "👨‍🍳", unlock: "first_cut", height: 1.25 },
+  { id: "rustic", name: "Rústica", emoji: "🪵", unlock: "cook", height: 1.15 },
+  { id: "cleaver", name: "Cutelo", emoji: "🪓", unlock: "champion", height: 1.75 },
+  { id: "golden", name: "Dourada", emoji: "🏆", unlock: "golden_bowl", height: 1.05 },
+  { id: "neon", name: "Neon", emoji: "💡", unlock: "regular", height: 1 },
+  { id: "laser", name: "Sabre laser", emoji: "⚔️", unlock: "surgeon", height: 0.8, sound: "saber" },
 ];
 
 const KEY = "slice-even:knife";
@@ -39,6 +40,11 @@ export function unlockHint(skin: KnifeSkin): string {
 
 /** The chosen skin, or the classic one if nothing (or something locked) is saved. */
 export function selectedSkin(): KnifeSkin {
+  // While developing, `?knife=laser` shows any knife without having to earn it.
+  if (import.meta.env.DEV) {
+    const preview = SKINS.find((s) => s.id === new URLSearchParams(location.search).get("knife"));
+    if (preview) return preview;
+  }
   let id = "classic";
   try {
     id = localStorage.getItem(KEY) ?? id;

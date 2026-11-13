@@ -21,6 +21,10 @@ const TEXTURE: Record<ObjectKind, Texture> = {
   banana: "soft",
   bread: "soft",
   cake: "soft",
+  potato: "crunchy",
+  ginger: "crunchy",
+  eggplant: "soft",
+  pepper: "crunchy",
 };
 
 let ctx: AudioContext | null = null;
@@ -313,6 +317,51 @@ export const sfx = {
     const note = (s: number) => 523.25 * 2 ** (s / 12);
     [0, 4, 7, 12, 7, 12].forEach((s, i) => tone(a, t + i * 0.11, "square", note(s), null, { decay: 0.2, peak: 0.12 }, 2600));
     tone(a, t + 0.66, "triangle", note(12), null, { decay: 0.9, peak: 0.25 });
+  },
+
+  /** A blade of light swung through the air: the hum bends up and back down. */
+  saberSwing() {
+    const a = audio();
+    if (!a) return;
+    const t = a.ctx.currentTime;
+    const out = a.ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.3, t + 0.05);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    const low = a.ctx.createBiquadFilter();
+    low.type = "lowpass";
+    low.frequency.setValueAtTime(700, t);
+    low.frequency.exponentialRampToValueAtTime(2200, t + 0.14);
+    low.frequency.exponentialRampToValueAtTime(600, t + 0.5);
+    low.connect(out).connect(a.out);
+    // Two voices a fifth apart, a little out of tune: the beating is the hum.
+    for (const [base, type] of [[92, "sawtooth"], [139, "square"]] as const) {
+      const osc = a.ctx.createOscillator();
+      osc.type = type;
+      osc.frequency.setValueAtTime(jitter(base, 0.02), t);
+      osc.frequency.exponentialRampToValueAtTime(base * 1.7, t + 0.14);
+      osc.frequency.exponentialRampToValueAtTime(base * 0.85, t + 0.5);
+      const g = a.ctx.createGain();
+      g.gain.value = type === "square" ? 0.25 : 0.6;
+      osc.connect(g).connect(low);
+      osc.start(t);
+      osc.stop(t + 0.55);
+    }
+  },
+
+  /** A blade of light going through something: a crackling sizzle over a surge of the hum. */
+  saberCut() {
+    const a = audio();
+    if (!a) return;
+    const t = a.ctx.currentTime;
+    noiseBurst(a, t, { type: "highpass", from: 2600 }, { attack: 0.01, decay: 0.32, peak: 0.34 });
+    for (let i = 0; i < 6; i++) {
+      noiseBurst(a, t + 0.02 + i * 0.035 + Math.random() * 0.02, { type: "bandpass", from: jitter(4200, 0.3), q: 6 }, { decay: 0.03, peak: 0.3 });
+    }
+    tone(a, t, "sawtooth", 78, 52, { attack: 0.02, decay: 0.55, peak: 0.32 }, 900);
+    tone(a, t, "square", 117, 78, { attack: 0.02, decay: 0.45, peak: 0.1 }, 1200);
+    // The zap as it bites.
+    tone(a, t, "sine", 1900, 320, { decay: 0.13, peak: 0.14 });
   },
 
   /** An object landing on the board. */

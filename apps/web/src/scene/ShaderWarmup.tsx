@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { generateObject, OBJECT_KINDS, type ObjectKind } from "@slice-even/core";
 import { createMaterials } from "./materials.ts";
+import { bladeMaterial, glowMaterials } from "./KnifeModels.tsx";
 
 /**
  * Compiling one of the procedural shaders takes a few hundred milliseconds,
@@ -60,6 +61,8 @@ export function ShaderWarmup({
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
     ]);
     add([new THREE.MeshPhysicalMaterial({ clearcoat: 1 })], undefined, true);
+    // The knife blades (one program for every finish) and the light of the glowing ones.
+    add([bladeMaterial({ color: "#dfe5ea", roughness: 0.24, grind: 1 }), ...glowMaterials()]);
 
     let next = 0;
     const run = async () => {

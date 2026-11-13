@@ -93,7 +93,7 @@ export function ruleInfo(rule: RoundRule, mass?: number): RuleInfo {
     case "blind":
       return { emoji: "🙈", title: "Às cegas", goal: "Memorize: o item some em instantes." };
     case "twin":
-      return { emoji: "👯", title: "Mesma fruta", goal: "Todos cortam o mesmo item. Comparação direta!" };
+      return { emoji: "👯", title: "Mesmo item", goal: "Todos cortam o mesmo item. Comparação direta!" };
   }
 }
 
@@ -149,8 +149,8 @@ export function stageRule(rule: RoundRule, seed: string): { spin?: number; cuts:
   };
 }
 
-/** Shapes for which a turning board matters (it does not for an orange). */
-export const LONG_KINDS: readonly ObjectKind[] = ["banana", "carrot", "cucumber", "bread"];
+/** Shapes for which a turning board matters (it does not for an orange): the long ones and the lumpy ones. */
+export const LONG_KINDS: readonly ObjectKind[] = ["banana", "carrot", "cucumber", "bread", "eggplant", "ginger", "potato"];
 
 /** Blind rounds hide the object this long after the round starts. */
 export const BLIND_AFTER_MS = 3000;
@@ -191,6 +191,10 @@ export const KIND_LABELS: Record<ObjectKind, string> = {
   banana: "Banana",
   carrot: "Cenoura",
   cake: "Bolo",
+  potato: "Batata",
+  ginger: "Gengibre",
+  eggplant: "Berinjela",
+  pepper: "Pimentão",
 };
 
 export const KIND_EMOJI: Record<ObjectKind, string> = {
@@ -202,6 +206,10 @@ export const KIND_EMOJI: Record<ObjectKind, string> = {
   banana: "🍌",
   carrot: "🥕",
   cake: "🎂",
+  potato: "🥔",
+  ginger: "🫚",
+  eggplant: "🍆",
+  pepper: "🫑",
 };
 
 export type KindMode = ObjectKind | "random";

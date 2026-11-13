@@ -7,6 +7,10 @@ import { DEFAULT_CARROT_RESOLUTION, generateCarrot, type CarrotParams } from "./
 import { DEFAULT_CUCUMBER_RESOLUTION, generateCucumber, type CucumberParams } from "./cucumber.ts";
 import { DEFAULT_ORANGE_RESOLUTION, generateOrange, type OrangeParams } from "./orange.ts";
 import { DEFAULT_TOMATO_RESOLUTION, generateTomato, type TomatoParams } from "./tomato.ts";
+import { DEFAULT_POTATO_RESOLUTION, generatePotato, type PotatoParams } from "./potato.ts";
+import { DEFAULT_GINGER_RESOLUTION, generateGinger, type GingerParams } from "./ginger.ts";
+import { DEFAULT_EGGPLANT_RESOLUTION, generateEggplant, type EggplantParams } from "./eggplant.ts";
+import { DEFAULT_PEPPER_RESOLUTION, generatePepper, type PepperParams } from "./pepper.ts";
 import type { GeneratedObject } from "./types.ts";
 
 export type AnyGeneratedObject =
@@ -17,7 +21,11 @@ export type AnyGeneratedObject =
   | GeneratedObject<"tomato", TomatoParams>
   | GeneratedObject<"banana", BananaParams>
   | GeneratedObject<"carrot", CarrotParams>
-  | GeneratedObject<"cake", CakeParams>;
+  | GeneratedObject<"cake", CakeParams>
+  | GeneratedObject<"potato", PotatoParams>
+  | GeneratedObject<"ginger", GingerParams>
+  | GeneratedObject<"eggplant", EggplantParams>
+  | GeneratedObject<"pepper", PepperParams>;
 
 export type ObjectKind = AnyGeneratedObject["kind"];
 
@@ -32,6 +40,10 @@ const GENERATORS: Record<ObjectKind, [Generator, StarShapeOptions]> = {
   banana: [generateBanana, DEFAULT_BANANA_RESOLUTION],
   carrot: [generateCarrot, DEFAULT_CARROT_RESOLUTION],
   cake: [generateCake, DEFAULT_CAKE_RESOLUTION],
+  potato: [generatePotato, DEFAULT_POTATO_RESOLUTION],
+  ginger: [generateGinger, DEFAULT_GINGER_RESOLUTION],
+  eggplant: [generateEggplant, DEFAULT_EGGPLANT_RESOLUTION],
+  pepper: [generatePepper, DEFAULT_PEPPER_RESOLUTION],
 };
 
 export const OBJECT_KINDS = Object.keys(GENERATORS) as readonly ObjectKind[];

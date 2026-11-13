@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { AnyGeneratedObject } from "@slice-even/core";
+import { PEPPER_BOXINESS, type AnyGeneratedObject } from "@slice-even/core";
 import type { KindShader } from "./common.ts";
 
 /* Per-kind GLSL. Each declarations block mirrors the matching generator in
@@ -637,6 +637,237 @@ function cake(object: Extract<AnyGeneratedObject, { kind: "cake" }>): KindShader
   };
 }
 
+/* ---------------------------------------------------------------- potato */
+
+function potato(object: Extract<AnyGeneratedObject, { kind: "potato" }>): KindShader {
+  const [rx, ry, rz] = object.params.radii;
+  return {
+    splash: "#f1e3b0",
+    uniforms: { uRadii: new THREE.Vector3(rx, ry, rz) },
+    declarations: /* glsl */ `
+      uniform vec3 uRadii;
+      // 0 at the middle, about 1 at the skin.
+      float potatoDepth(vec3 p) { return length(p / uRadii); }
+      // Eyes: sparse little pits.
+      float potatoEyes(vec3 p) {
+        vec2 w = worleyId(p * 0.55);
+        return smoothstep(0.2, 0.06, w.x) * step(0.45, w.y);
+      }
+    `,
+    skin: {
+      bump: 1,
+      material: { roughness: 0.82, clearcoat: 0.05, clearcoatRoughness: 0.8 },
+      body: /* glsl */ `
+        vec3 surfaceColor(vec3 p) {
+          vec3 col = mix(vec3(0.70, 0.54, 0.34), vec3(0.83, 0.69, 0.47), fbm(p * 0.7));
+          // Russet patches and a dusting of dirt.
+          col = mix(col, vec3(0.52, 0.38, 0.23), smoothstep(0.5, 0.8, fbm(p * 1.7 + 7.0)) * 0.65);
+          col *= 0.92 + 0.12 * vnoise(p * 15.0);
+          return mix(col, vec3(0.3, 0.21, 0.13), potatoEyes(p) * 0.85);
+        }
+        float surfaceHeight(vec3 p) { return 0.025 * fbm(p * 4.0) - 0.07 * potatoEyes(p); }
+      `,
+    },
+    flesh: {
+      bump: 1,
+      material: { roughness: 0.5, clearcoat: 0.45, clearcoatRoughness: 0.35 },
+      body: /* glsl */ `
+        vec3 surfaceColor(vec3 p) {
+          float d = potatoDepth(p);
+          vec3 col = mix(vec3(0.98, 0.94, 0.74), vec3(0.94, 0.87, 0.6), smoothstep(0.55, 1.0, d));
+          col *= 0.96 + 0.06 * vnoise(p * 9.0);
+          // A faint ring under the skin, then the skin itself.
+          col = mix(col, vec3(0.9, 0.8, 0.5), smoothstep(0.05, 0.0, abs(d - 0.86)) * 0.35);
+          return mix(col, vec3(0.62, 0.47, 0.29), smoothstep(0.95, 1.0, d));
+        }
+        float surfaceHeight(vec3 p) { return 0.006 * vnoise(p * 12.0); }
+      `,
+    },
+  };
+}
+
+/* ---------------------------------------------------------------- ginger */
+
+function ginger(): KindShader {
+  return {
+    splash: "#f3e2a0",
+    uniforms: {},
+    declarations: "",
+    skin: {
+      bump: 1,
+      material: { roughness: 0.6, clearcoat: 0.25, clearcoatRoughness: 0.5 },
+      body: /* glsl */ `
+        // Growth rings: thin bands that wrap around, wobbling a little.
+        float gingerRings(vec3 p) {
+          float along = p.x * 2.2 + 1.5 * fbm(p * 0.5);
+          return smoothstep(0.82, 0.98, abs(sin(along)));
+        }
+        vec3 surfaceColor(vec3 p) {
+          vec3 col = mix(vec3(0.78, 0.63, 0.4), vec3(0.89, 0.77, 0.52), fbm(p * 0.8));
+          col = mix(col, vec3(0.6, 0.45, 0.27), gingerRings(p) * 0.55);
+          // Scuffed, darker patches where the skin has dried.
+          col = mix(col, vec3(0.55, 0.42, 0.27), smoothstep(0.6, 0.85, fbm(p * 2.1 + 3.0)) * 0.4);
+          return col * (0.94 + 0.1 * vnoise(p * 12.0));
+        }
+        float surfaceHeight(vec3 p) { return 0.03 * fbm(p * 3.0) - 0.03 * gingerRings(p); }
+      `,
+    },
+    flesh: {
+      bump: 1,
+      material: { roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.3 },
+      body: /* glsl */ `
+        vec3 surfaceColor(vec3 p) {
+          // Fibers run along the rhizome: stretched noise.
+          float fibers = vnoise(vec3(p.x * 0.7, p.y * 9.0, p.z * 9.0));
+          vec3 col = mix(vec3(0.96, 0.88, 0.5), vec3(0.99, 0.94, 0.68), fibers);
+          col = mix(col, vec3(0.9, 0.78, 0.38), smoothstep(0.55, 0.9, fbm(p * 1.3)) * 0.35);
+          return col * (0.97 + 0.05 * vnoise(p * 16.0));
+        }
+        float surfaceHeight(vec3 p) { return 0.012 * vnoise(vec3(p.x * 0.7, p.y * 9.0, p.z * 9.0)); }
+      `,
+    },
+  };
+}
+
+/* ---------------------------------------------------------------- eggplant */
+
+function eggplant(object: Extract<AnyGeneratedObject, { kind: "eggplant" }>): KindShader {
+  const p = object.params;
+  return {
+    splash: "#efe9c9",
+    uniforms: { uLength: p.length, uRadius: p.radius, uNeck: p.neck, uPeak: p.peak, uBend: p.bend },
+    declarations: /* glsl */ `
+      uniform float uLength, uRadius, uNeck, uPeak, uBend;
+      // (position along the length, distance from the spine / radius there, angle around).
+      vec3 eggplantCoords(vec3 p) {
+        float s = clamp((p.x + uLength * 0.5) / uLength, 0.0, 1.0);
+        vec2 v = vec2(p.z - 4.0 * uBend * s * (1.0 - s), p.y);
+        float t = clamp(s / uPeak, 0.0, 1.0);
+        float swell = uNeck + (1.0 - uNeck) * t * t * (3.0 - 2.0 * t);
+        float R = uRadius * swell * roundTip(s * uLength, uRadius * uNeck * 0.9) * roundTip((1.0 - s) * uLength, uRadius);
+        return vec3(s, length(v) / max(R, 1e-3), atan(v.y, v.x));
+      }
+    `,
+    skin: {
+      bump: 1,
+      material: { roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.06 },
+      body: /* glsl */ `
+        vec3 surfaceColor(vec3 p) {
+          vec3 c = eggplantCoords(p);
+          vec3 col = mix(vec3(0.13, 0.04, 0.17), vec3(0.24, 0.08, 0.3), fbm(p * 0.5));
+          // Faint lighter streaks along the length, and a paler collar under the cap.
+          col = mix(col, vec3(0.36, 0.14, 0.4), smoothstep(0.6, 0.9, vnoise(vec3(c.z * 5.0, c.x * 2.0, 0.0))) * 0.35);
+          return mix(col, vec3(0.5, 0.36, 0.5), smoothstep(0.1, 0.0, c.x) * 0.6);
+        }
+        float surfaceHeight(vec3 p) { return 0.004 * fbm(p * 3.0); }
+      `,
+    },
+    flesh: {
+      bump: 1,
+      material: { roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.6 },
+      body: /* glsl */ `
+        // Seeds sit in a band around the middle, in loose clusters.
+        float eggplantSeeds(vec3 p, vec3 c) {
+          vec2 w = worleyId(p * 2.6);
+          float band = smoothstep(0.15, 0.3, c.y) * smoothstep(0.8, 0.6, c.y);
+          return smoothstep(0.22, 0.1, w.x) * step(0.35, w.y) * band * smoothstep(0.3, 0.6, fbm(p * 0.9));
+        }
+        vec3 surfaceColor(vec3 p) {
+          vec3 c = eggplantCoords(p);
+          vec3 col = mix(vec3(0.95, 0.94, 0.8), vec3(0.88, 0.9, 0.7), smoothstep(0.6, 0.95, c.y));
+          col *= 0.96 + 0.06 * vnoise(p * 7.0);
+          col = mix(col, vec3(0.72, 0.6, 0.38), eggplantSeeds(p, c) * 0.8);
+          // Green just under the skin, then the purple skin.
+          col = mix(col, vec3(0.7, 0.8, 0.5), smoothstep(0.88, 0.96, c.y) * 0.5);
+          return mix(col, vec3(0.2, 0.07, 0.25), smoothstep(0.965, 0.995, c.y));
+        }
+        float surfaceHeight(vec3 p) {
+          return -0.02 * eggplantSeeds(p, eggplantCoords(p)) + 0.01 * vnoise(p * 9.0);
+        }
+      `,
+    },
+  };
+}
+
+/* ---------------------------------------------------------------- pepper */
+
+const PEPPER_SKIN = { red: "#c8161a", yellow: "#f2c21b", green: "#3f8a22", orange: "#f07a14" } as const;
+
+function pepper(object: Extract<AnyGeneratedObject, { kind: "pepper" }>): KindShader {
+  const p = object.params;
+  return {
+    splash: PEPPER_SKIN[p.color],
+    uniforms: {
+      uColor: srgb(PEPPER_SKIN[p.color]),
+      uRadius: p.radius,
+      uHeightRatio: p.heightRatio,
+      uLobes: new THREE.Vector3(p.lobes.count, p.lobes.amplitude, p.lobes.phase),
+      uWall: p.wall,
+      uBoxiness: PEPPER_BOXINESS,
+    },
+    declarations: /* glsl */ `
+      uniform vec3 uColor, uLobes;
+      uniform float uRadius, uHeightRatio, uWall, uBoxiness;
+      // Distance from the middle as a fraction of the way to the skin (the generator's shape, minus its small details).
+      float pepperDepth(vec3 p, out float around) {
+        vec3 q = vec3(p.x, p.y / uHeightRatio, p.z);
+        float len = max(length(q), 1e-3);
+        float c = abs(q.y) / len;
+        float s = sqrt(max(0.0, 1.0 - c * c));
+        around = atan(q.z, q.x);
+        float r = uRadius * pow(pow(c, uBoxiness) + pow(s, uBoxiness), -1.0 / uBoxiness);
+        r *= 1.0 + uLobes.y * s * cos(uLobes.x * around + uLobes.z);
+        return len / r;
+      }
+    `,
+    skin: {
+      bump: 1,
+      material: { roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08 },
+      body: /* glsl */ `
+        vec3 surfaceColor(vec3 p) {
+          vec3 col = uColor * (0.88 + 0.2 * fbm(p * 0.45));
+          // Still green around the stem.
+          float top = smoothstep(0.55, 0.95, p.y / (uRadius * uHeightRatio));
+          return mix(col, mix(uColor, vec3(0.25, 0.5, 0.14), 0.7), top * 0.5 * fbm(p * 1.4 + 2.0));
+        }
+        float surfaceHeight(vec3 p) { return 0.004 * fbm(p * 3.0); }
+      `,
+    },
+    flesh: {
+      bump: 1,
+      material: { roughness: 0.4, clearcoat: 0.6, clearcoatRoughness: 0.25 },
+      body: /* glsl */ `
+        // The pepper is hollow: a wall of flesh, pale ribs, and the seed core up top.
+        vec4 pepperInside(vec3 p) {
+          float around;
+          float d = pepperDepth(p, around);
+          float wall = smoothstep(1.0 - uWall - 0.02, 1.0 - uWall + 0.02, d);
+          // Ribs run inwards between the lobes.
+          float rib = smoothstep(0.86, 1.0, cos(uLobes.x * around + uLobes.z + 3.14159)) * smoothstep(0.35, 0.75, d);
+          float core = smoothstep(0.42, 0.25, length(p.xz) / uRadius) * smoothstep(0.1, 0.5, p.y / (uRadius * uHeightRatio));
+          vec2 w = worleyId(p * 3.4);
+          float seeds = smoothstep(0.24, 0.12, w.x) * step(0.3, w.y) * core;
+          return vec4(wall, rib, core, seeds);
+        }
+        vec3 surfaceColor(vec3 p) {
+          vec4 k = pepperInside(p);
+          // The hollow: the inside of the far wall, in shadow.
+          vec3 col = uColor * 0.42 * (0.9 + 0.2 * vnoise(p * 3.0));
+          col = mix(col, vec3(0.95, 0.92, 0.78), max(k.y * 0.85, k.z * 0.9));
+          col = mix(col, vec3(0.97, 0.9, 0.6), k.w);
+          vec3 flesh = mix(uColor, vec3(1.0, 0.96, 0.86), 0.28) * (0.95 + 0.08 * vnoise(p * 8.0));
+          return mix(col, flesh, k.x);
+        }
+        float surfaceHeight(vec3 p) {
+          vec4 k = pepperInside(p);
+          return 0.12 * k.x + 0.05 * max(k.y, k.z) + 0.03 * k.w;
+        }
+        float surfaceRoughness(vec3 p, float base) { return mix(0.8, base, pepperInside(p).x); }
+      `,
+    },
+  };
+}
+
 export function kindShader(object: AnyGeneratedObject, skinColor: string): KindShader {
   switch (object.kind) {
     case "apple":
@@ -655,5 +886,13 @@ export function kindShader(object: AnyGeneratedObject, skinColor: string): KindS
       return carrot(object);
     case "cake":
       return cake(object);
+    case "potato":
+      return potato(object);
+    case "ginger":
+      return ginger();
+    case "eggplant":
+      return eggplant(object);
+    case "pepper":
+      return pepper(object);
   }
 }

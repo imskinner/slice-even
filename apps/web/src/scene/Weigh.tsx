@@ -104,12 +104,22 @@ export function Halves({ geometry, plane, skin, flesh, bounds, stem, stemBase, s
 
       // On the plate the half sits on its own middle, turned to show the cut
       // face to the camera, unless it is long: those stay as they lie.
-      const half = meshes[i]!.geometry;
-      half.computeBoundingBox();
-      const box = half.boundingBox!;
+      const box = meshes[i]!.geometry.boundingBox!;
       const center = new THREE.Vector3((box.min.x + box.max.x) / 2, floor, (box.min.z + box.max.z) / 2);
-      const [w, d] = [box.max.x - box.min.x, box.max.z - box.min.z];
-      const long = Math.max(w, d) / Math.max(0.1, Math.min(w, d)) > 1.6;
+      // Long means it sticks out from the cut further than the cut face is
+      // wide (half a cucumber), not that its box is oblong: half an apple is
+      // twice as wide as it is deep and should still turn to face the camera.
+      let depth = 0;
+      let [left, right] = [Infinity, -Infinity];
+      for (const x of [box.min.x, box.max.x]) {
+        for (const z of [box.min.z, box.max.z]) {
+          depth = Math.max(depth, (x - plane.point[0]) * dir.x + (z - plane.point[2]) * dir.z);
+          const across = -x * dir.z + z * dir.x;
+          left = Math.min(left, across);
+          right = Math.max(right, across);
+        }
+      }
+      const long = depth > 1.25 * (right - left);
       const yaw = long ? turn : -Math.atan2(-dir.x, -dir.z);
       return {
         dir,

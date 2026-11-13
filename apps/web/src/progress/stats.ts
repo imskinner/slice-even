@@ -36,7 +36,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "perfect", emoji: "✨", title: "Perfeito!", description: "Erre menos de 0,5%." },
   { id: "surgeon", emoji: "🩺", title: "Cirurgião", description: "Erre menos de 0,1%." },
   { id: "steady", emoji: "🎯", title: "Mão firme", description: "Três cortes seguidos abaixo de 2%." },
-  { id: "golden_bowl", emoji: "🏆", title: "Fruteira de ouro", description: "Abaixo de 1% em todos os itens." },
+  { id: "golden_bowl", emoji: "🏆", title: "Despensa de ouro", description: "Abaixo de 1% em todos os itens." },
   { id: "bullseye", emoji: "🎯", title: "Na mosca", description: "Abaixo de 1% numa rodada de alvo." },
   { id: "blitz", emoji: "⚡", title: "Relâmpago", description: "Abaixo de 2% numa rodada relâmpago." },
   { id: "xray", emoji: "🙈", title: "Visão de raio-X", description: "Abaixo de 2% numa rodada às cegas." },
